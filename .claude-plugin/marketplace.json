@@ -1,0 +1,8 @@
+{
+  "name": "local-mods",
+  "owner": { "name": "shakiz" },
+  "plugins": [
+    { "name": "agent-progress", "source": "./mods/agent-progress" },
+    { "name": "file-activity", "source": "./mods/file-activity" }
+  ]
+}
