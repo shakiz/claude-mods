@@ -22,7 +22,7 @@ A live **Files** pane:
 
 - **RIGHT NOW:** which file Claude is reading or editing, and its folder.
 - **Branch line:** the current git branch and how many files have changed.
-- **File list:** every file Claude touched, grouped by folder. Each row has colored dots for *read*, *edited* and *not committed*, shows `editing…` while a change is in progress, then `+added −removed` line counts once it's done.
+- **File list:** every file Claude touched, grouped by folder. Each row has colored dots for *read*, *edited* and *not committed*, shows `editing…` while a change is in progress, then `+added −removed`: the lines Claude changed in that file this session, counted from a real diff.
 
 Toggle it with `/files`.
 
