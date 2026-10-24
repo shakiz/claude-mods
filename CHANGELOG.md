@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- agent-tree: a TIMELINE section, shown once a sub-agent has run, draws one bar per agent on a shared time axis from the prompt's start, so you can see which agents ran in parallel.
+- files: when an agent edits a file that another sub-agent edited and that agent is still running, the file is marked ⚠, a count shows under the branch line, and a toast names the two agents.
+
 ## 0.3.0
 
 - agent-tree: each card shows a context meter, `ctx ▰▰▰▱▱ 62%`, in the warning color from 60% and the error color from 85%.
