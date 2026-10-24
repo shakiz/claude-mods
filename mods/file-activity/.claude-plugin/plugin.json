@@ -1,1 +1,0 @@
-{ "name": "file-activity", "version": "0.1.0", "description": "Live pane of the files Claude reads and changes, and which are done", "types": "./types/index.d.ts" }

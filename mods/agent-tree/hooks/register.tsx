@@ -3,11 +3,11 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Loop, Phase, Run, Todo } from '../types'
 
-const PANE = 'agent-progress'
+const PANE = 'agent-tree'
 const MAIN = 'main'
-const loops = atom({ plugin: 'agent-progress', key: 'loops' } as const, {} as Record<string, Loop>)
-const run = atom({ plugin: 'agent-progress', key: 'run' } as const, null as Run | null)
-const tick = atom({ plugin: 'agent-progress', key: 'tick' } as const, 0)
+const loops = atom({ plugin: 'agent-tree', key: 'loops' } as const, {} as Record<string, Loop>)
+const run = atom({ plugin: 'agent-tree', key: 'run' } as const, null as Run | null)
+const tick = atom({ plugin: 'agent-tree', key: 'tick' } as const, 0)
 
 const LIVE: Phase[] = ['starting', 'thinking', 'writing', 'calling', 'tools']
 const COLORS = ['warning', 'suggestion', 'success', 'claude', 'permission', 'planMode'] as const
@@ -81,8 +81,8 @@ export const register: Register = on => {
   let statusShown = false
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'progress', description: 'Toggle the live agent progress pane' })
-    void $.ui.open({ id: PANE, title: 'Agents' })
+    await $.command.register({ name: 'tree', description: 'Toggle the live agent tree pane' })
+    void $.ui.open({ id: PANE, title: 'Agent tree' })
 
     let beats = 0
     $.clock.every(1000, () => {
@@ -112,14 +112,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'progress' }, async $ => {
+  on('command.run', { command: 'tree' }, async $ => {
     const open = (await $.ui.panes()).some(p => p.id === PANE)
     if (open) {
       await $.ui.close({ id: PANE })
-      return { text: 'Agent progress pane closed.' }
+      return { text: 'Agent tree pane closed.' }
     }
-    await $.ui.open({ id: PANE, title: 'Agents' })
-    return { text: 'Agent progress pane opened.' }
+    await $.ui.open({ id: PANE, title: 'Agent tree' })
+    return { text: 'Agent tree pane opened.' }
   })
 
   on('turn.start', async ($, e, next) => {
@@ -343,7 +343,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        <Text bold>Agents</Text>
+        <Text bold>Agent tree</Text>
         <Text dimColor wrap="truncate-end">
           {all[MAIN]?.title ?? 'Nothing has run yet'}
         </Text>

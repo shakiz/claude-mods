@@ -22,7 +22,7 @@ export type Run = { startedAt: number; endedAt?: number; costAtStart: number; co
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-progress': {
+    'agent-tree': {
       loops: Record<string, Loop>
       run: Run | null
       tick: number

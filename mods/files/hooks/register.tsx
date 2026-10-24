@@ -3,10 +3,10 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { FileEntry, FileOp, GitInfo } from '../types'
 
-const PANE = 'file-activity'
-const files = atom({ plugin: 'file-activity', key: 'files' } as const, {} as Record<string, FileEntry>)
-const git = atom({ plugin: 'file-activity', key: 'git' } as const, null as GitInfo | null)
-const cwd = atom({ plugin: 'file-activity', key: 'cwd' } as const, '')
+const PANE = 'files'
+const files = atom({ plugin: 'files', key: 'files' } as const, {} as Record<string, FileEntry>)
+const git = atom({ plugin: 'files', key: 'git' } as const, null as GitInfo | null)
+const cwd = atom({ plugin: 'files', key: 'cwd' } as const, '')
 
 const READ_COLOR = 'suggestion'
 const EDIT_COLOR = 'claude'
@@ -62,7 +62,7 @@ const touch = (
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'files', description: 'Toggle the live file activity pane' })
+    await $.command.register({ name: 'files', description: 'Toggle the live files pane' })
     const dir = await $.session.cwd()
     await update($, cwd, () => dir)
     await refreshGit($)
@@ -75,10 +75,10 @@ export const register: Register = on => {
     const open = (await $.ui.panes()).some(p => p.id === PANE)
     if (open) {
       await $.ui.close({ id: PANE })
-      return { text: 'File activity pane closed.' }
+      return { text: 'Files pane closed.' }
     }
     await $.ui.open({ id: PANE, title: 'Files' })
-    return { text: 'File activity pane opened.' }
+    return { text: 'Files pane opened.' }
   })
 
   on('tool.call', async ($, e, next) => {

@@ -1,10 +1,10 @@
-# claude-mods
+# claude-panes
 
-Two mods for [Claude Code](https://claude.com/claude-code) that show what Claude is doing while it works.
+Two live side panes for [Claude Code](https://claude.com/claude-code) that show what Claude is doing while it works.
 
-## agent-progress
+## agent-tree
 
-A live **Agents** pane:
+A live **Agent tree** pane:
 
 - **Header tiles:** Cost, Tokens and Time for the current prompt.
 - **RUNNING · n:** a card for each running agent, with sub-agents indented under the agent that started them. Each card shows:
@@ -14,9 +14,9 @@ A live **Agents** pane:
 - **FINISHED · n:** compact rows marked ✓, ✗ or ■ (stopped).
 - **Status line:** a one-line summary while work is running, so progress is visible even with the pane closed.
 
-Toggle it with `/progress`.
+Toggle it with `/tree`.
 
-## file-activity
+## files
 
 A live **Files** pane:
 
@@ -33,38 +33,54 @@ Only Claude's Read, Edit and Write tools are tracked. A file changed by a shell 
 At the prompt of a Claude Code session:
 
 ```
-/plugin install agent-progress --marketplace shakiz/claude-mods
-/plugin install file-activity --marketplace shakiz/claude-mods
+/plugin install agent-tree --marketplace shakiz/claude-panes
+/plugin install files --marketplace shakiz/claude-panes
 ```
 
-Answer `y` to add the marketplace, then choose the **user** scope so the mods load in every session.
+Answer `y` to add the marketplace, then choose the **user** scope so the panes load in every session.
 
 Or from a shell:
 
 ```bash
-claude plugin marketplace add shakiz/claude-mods
-claude plugin install agent-progress@local-mods --scope user
-claude plugin install file-activity@local-mods --scope user
+claude plugin marketplace add shakiz/claude-panes
+claude plugin install agent-tree@claude-panes --scope user
+claude plugin install files@claude-panes --scope user
 ```
 
-In the desktop app, where `/plugin` doesn't run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `shakiz/claude-mods`, then **Add plugin**.
+In the desktop app, where `/plugin` doesn't run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `shakiz/claude-panes`, then **Add plugin**.
 
-The panes open on their own when the terminal is at least 144 columns wide. In a narrower terminal, open them with `/progress` and `/files`.
+The panes open on their own when the terminal is at least 144 columns wide. In a narrower terminal, open them with `/tree` and `/files`.
 
 ## Update
 
 ```bash
-claude plugin marketplace update local-mods
-claude plugin update agent-progress@local-mods
-claude plugin update file-activity@local-mods
+claude plugin marketplace update claude-panes
+claude plugin update agent-tree@claude-panes
+claude plugin update files@claude-panes
 ```
 
 Then run `/reload-plugins` in any open session.
 
-## Uninstall
+## Moving from claude-mods
+
+The repo was called `claude-mods`, the marketplace `local-mods`, and the panes `agent-progress` (`/progress`) and `file-activity`. To switch to the new names:
 
 ```bash
 claude plugin uninstall agent-progress@local-mods
 claude plugin uninstall file-activity@local-mods
 claude plugin marketplace remove local-mods
 ```
+
+Then follow [Install](#install).
+
+## Uninstall
+
+```bash
+claude plugin uninstall agent-tree@claude-panes
+claude plugin uninstall files@claude-panes
+claude plugin marketplace remove claude-panes
+```
+
+## License
+
+[MIT](LICENSE)

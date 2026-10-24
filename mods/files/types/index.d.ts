@@ -17,7 +17,7 @@ export type GitInfo = { root: string; branch: string; dirty: string[] }
 
 declare module 'claude-code' {
   interface PluginState {
-    'file-activity': {
+    'files': {
       files: Record<string, FileEntry>
       git: GitInfo | null
       cwd: string
