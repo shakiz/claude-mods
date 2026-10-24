@@ -1,8 +1,9 @@
 {
-  "name": "local-mods",
+  "name": "claude-panes",
   "owner": { "name": "shakiz" },
+  "description": "Live side panes for Claude Code: the agent tree and the files Claude touches",
   "plugins": [
-    { "name": "agent-progress", "source": "./mods/agent-progress" },
-    { "name": "file-activity", "source": "./mods/file-activity" }
+    { "name": "agent-tree", "source": "./mods/agent-tree" },
+    { "name": "files", "source": "./mods/files" }
   ]
 }

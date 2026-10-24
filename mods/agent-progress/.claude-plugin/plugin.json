@@ -1,1 +1,0 @@
-{ "name": "agent-progress", "version": "0.1.0", "description": "Live pane of running agents and sub-agents: phase, todos, tokens, cost and time", "types": "./types/index.d.ts" }

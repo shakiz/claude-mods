@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const PROPS = {
-  title: 'Agents',
+  title: 'Agent tree',
   isFocused: false,
   bodyColumns: 60,
   placement: 'dock' as const,
@@ -21,7 +21,7 @@ test('a running turn shows as a card with todo progress', async ($, on) => {
     ],
   })
   for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ plugin: 'agent-progress', surface, component: 'Pane', requestId: 'agent-progress', props: PROPS })
+    const ui = await $.ui.mount({ plugin: 'agent-tree', surface, component: 'Pane', requestId: 'agent-tree', props: PROPS })
     expect(await ui.find({ text: /RUNNING · 1/ })).toBeDefined()
     expect(await ui.find({ text: /1\/2 · Building pricing/ })).toBeDefined()
     await ui.unmount()
