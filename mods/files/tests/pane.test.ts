@@ -16,6 +16,7 @@ const fakeHost = (on: On, disk: Record<string, string>, status = '') => {
   on('session.cwd', () => ({ value: '/repo' }))
   on('command.register', () => ({ value: { command: 'files' } }))
   on('ui.open', () => ({ value: { isPlaced: false } }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'Write tests', type: 'general-purpose', status: 'running' as const }] }))
   on('clock.every', () => ({ value: undefined }))
   on('fs.read', (_$, e) => (e.path in disk ? { value: disk[e.path]! } : { deny: 'ENOENT' }))
   on('env.get', () => ({ value: '/home/dev' }))
@@ -78,4 +79,23 @@ test("a rename's original path is not read as a dirty file", async ($, on) => {
   const ui = await pane($)
   expect(await ui.find({ text: /^1 file changed/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('files show which agents edited or read them once more than one agent is at work', async ($, on) => {
+  fakeHost(on, { '/repo/a.ts': 'x\n', '/repo/b.ts': 'y\n' })
+  await start($)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'x', new_string: 'z' })
+  let ui = await pane($)
+  // One agent alone: no legend
+  expect(await ui.find({ text: /general-purpose/ })).toBeUndefined()
+  await ui.unmount()
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts', agentId: 'a1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/b.ts', old_string: 'y', new_string: 'w', agentId: 'a1' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    ui = await pane($, surface)
+    expect(await ui.find({ text: /◆ main  ◆ general-purpose/ })).toBeDefined()
+    expect(await ui.find({ text: /◆◇ a\.ts/ })).toBeDefined()
+    expect(await ui.find({ text: /◆ b\.ts/ })).toBeDefined()
+    await ui.unmount()
+  }
 })

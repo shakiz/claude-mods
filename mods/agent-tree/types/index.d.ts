@@ -15,6 +15,8 @@ export type Loop = {
   endedAt?: number
   steps: number
   tokens: number
+  context?: number
+  window?: number
   todos: Todo[]
 }
 

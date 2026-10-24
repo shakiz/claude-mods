@@ -1,17 +1,44 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { FileEntry, FileOp, GitInfo } from '../types'
+import type { AgentTag, FileEntry, FileOp, GitInfo } from '../types'
 
 const PANE = 'files'
 const files = atom({ plugin: 'files', key: 'files' } as const, {} as Record<string, FileEntry>)
 const git = atom({ plugin: 'files', key: 'git' } as const, null as GitInfo | null)
 const cwd = atom({ plugin: 'files', key: 'cwd' } as const, '')
 const home = atom({ plugin: 'files', key: 'home' } as const, '')
+const agents = atom({ plugin: 'files', key: 'agents' } as const, {} as Record<string, AgentTag>)
 
 const READ_COLOR = 'suggestion'
 const EDIT_COLOR = 'claude'
 const DIRTY_COLOR = 'warning'
+const MAIN = 'main'
+const AGENT_COLORS = ['suggestion', 'success', 'permission', 'planMode', 'merged', 'remember', 'autoAccept', 'ide'] as const
+
+// The same color agent-tree gives the agent: main is 'claude', others hash their id
+const agentColor = (id: string) => {
+  if (id === MAIN) return 'claude'
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return AGENT_COLORS[h % AGENT_COLORS.length]!
+}
+
+const addOnce = (list: string[] | undefined, id: string) => (list?.includes(id) ? list : [...(list ?? []), id])
+
+// Names an agent the first time it touches a file
+const tagAgent = async ($: EngineInterface, id: string) => {
+  if ((await read($, agents))[id]) return
+  let label = 'main'
+  if (id !== MAIN) {
+    const info = await $.agent.list().then(
+      list => list.find(a => a.id === id),
+      () => undefined,
+    )
+    label = info?.type ?? 'agent'
+  }
+  await update($, agents, all => ({ ...all, [id]: { label, firstSeen: Object.keys(all).length } }))
+}
 
 // Each file's text before Claude first changed it: '' for a new file, null when unreadable
 const baselines = new Map<string, string | null>()
@@ -84,7 +111,6 @@ const touch = (
   path: string,
   op: FileOp,
   fn: (f: FileEntry) => FileEntry,
-  agentId?: string,
 ) =>
   update($, files, all => {
     const prev: FileEntry = all[path] ?? {
@@ -97,8 +123,10 @@ const touch = (
       added: 0,
       removed: 0,
       touchedAt: 0,
+      editedBy: [],
+      readBy: [],
     }
-    return { ...all, [path]: fn({ ...prev, agentId, touchedAt: Date.now() }) }
+    return { ...all, [path]: fn({ ...prev, touchedAt: Date.now() }) }
   })
 
 export const register: Register = on => {
@@ -144,7 +172,9 @@ export const register: Register = on => {
 
     const p = path
     const kind = op
-    await touch($, p, kind, f => ({ ...f, lastOp: kind, isBusy: true, isFailed: false }), e.agentId)
+    const who = e.agentId ?? MAIN
+    await tagAgent($, who)
+    await touch($, p, kind, f => ({ ...f, lastOp: kind, isBusy: true, isFailed: false }))
     if (kind !== 'read' && !baselines.has(p)) baselines.set(p, (await readText($, p)) ?? '')
     const ran = await next(e)
     const failed = 'deny' in ran || ran.isError === true
@@ -166,8 +196,9 @@ export const register: Register = on => {
         edits: f.edits + (kind !== 'read' && !failed ? 1 : 0),
         added: stat?.added ?? f.added,
         removed: stat?.removed ?? f.removed,
+        editedBy: kind !== 'read' && !failed ? addOnce(f.editedBy, who) : f.editedBy ?? [],
+        readBy: kind === 'read' && !failed ? addOnce(f.readBy, who) : f.readBy ?? [],
       }),
-      e.agentId,
     )
     if (kind !== 'read') await refreshGit($)
     return ran
@@ -179,6 +210,8 @@ export const register: Register = on => {
     const repo = await read($, git)
     const base = repo?.root ?? (await read($, cwd))
     const homeDir = await read($, home)
+    const tags = await read($, agents)
+    const known = Object.entries(tags).sort((a, b) => a[1].firstSeen - b[1].firstSeen)
     const width = Math.max(24, e.props.bodyColumns)
     const dirty = new Set(repo?.dirty ?? [])
 
@@ -214,6 +247,9 @@ export const register: Register = on => {
         lastDir = dir
       }
       const isDirty = dirty.has(f.path)
+      const editors = f.editedBy ?? []
+      const readers = (f.readBy ?? []).filter(id => !editors.includes(id))
+      const owners = [...editors.map(id => ({ id, mark: '◆' })), ...readers.map(id => ({ id, mark: '◇' }))].slice(0, 3)
       rows.push(
         <Box key={f.path} justifyContent="space-between" paddingLeft={2}>
           <Box flexShrink={1}>
@@ -221,6 +257,13 @@ export const register: Register = on => {
               <Text color={READ_COLOR}>{f.reads > 0 ? '●' : ' '}</Text>
               <Text color={EDIT_COLOR}>{f.edits > 0 ? '●' : ' '}</Text>
               <Text color={DIRTY_COLOR}>{isDirty ? '●' : ' '}</Text>{' '}
+              {known.length > 1 &&
+                owners.map(o => (
+                  <Text key={o.id} color={agentColor(o.id)}>
+                    {o.mark}
+                  </Text>
+                ))}
+              {known.length > 1 && ' '}
               <Text bold={f.isBusy} color={f.isFailed ? 'error' : f.isBusy ? EDIT_COLOR : undefined}>
                 {name}
               </Text>
@@ -279,6 +322,17 @@ export const register: Register = on => {
           <Text color={DIRTY_COLOR}>●</Text>
           <Text dimColor> not committed</Text>
         </Text>
+        {known.length > 1 && (
+          <Text wrap="truncate-end">
+            {known.map(([id, t], i) => (
+              <Text key={id}>
+                {i > 0 ? '  ' : ''}
+                <Text color={agentColor(id)}>◆</Text>
+                <Text dimColor> {t.label}</Text>
+              </Text>
+            ))}
+          </Text>
+        )}
         <Box flexDirection="column" marginTop={1}>
           {rows}
           {tree.length > shown.length && <Text dimColor>… {tree.length - shown.length} more</Text>}

@@ -9,9 +9,13 @@ export type FileEntry = {
   edits: number
   added: number
   removed: number
-  agentId?: string
   touchedAt: number
+  // Agent ids, 'main' for the main conversation; may be absent in state saved by 0.2.1
+  editedBy?: string[]
+  readBy?: string[]
 }
+
+export type AgentTag = { label: string; firstSeen: number }
 
 export type GitInfo = { root: string; branch: string; dirty: string[] }
 
@@ -22,6 +26,7 @@ declare module 'claude-code' {
       git: GitInfo | null
       cwd: string
       home: string
+      agents: Record<string, AgentTag>
     }
   }
 }

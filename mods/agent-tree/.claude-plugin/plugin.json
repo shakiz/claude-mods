@@ -1,1 +1,1 @@
-{ "name": "agent-tree", "version": "0.2.1", "description": "Live pane of running agents and sub-agents: phase, todos, tokens, cost and time", "author": { "name": "shakiz" }, "types": "./types/index.d.ts" }
+{ "name": "agent-tree", "version": "0.3.0", "description": "Live pane of running agents and sub-agents: phase, todos, tokens, cost and time", "author": { "name": "shakiz" }, "types": "./types/index.d.ts" }
