@@ -13,6 +13,8 @@ export type FileEntry = {
   // Agent ids, 'main' for the main conversation; may be absent in state saved by 0.2.1
   editedBy?: string[]
   readBy?: string[]
+  // Agents that edited the file while another of them was still running
+  conflictWith?: string[]
 }
 
 export type AgentTag = { label: string; firstSeen: number }

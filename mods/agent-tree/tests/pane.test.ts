@@ -70,3 +70,29 @@ test("a card shows how much of its model's context window is used", async ($, on
     await ui.unmount()
   }
 })
+
+test('the timeline shows one bar per agent once a sub-agent has run', async ($, on) => {
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  on('agent.list', () => ({
+    value: [
+      { id: 'a1', description: 'Find auth code', type: 'Explore', status: 'completed' as const },
+      { id: 'a2', description: 'Write login tests', type: 'general-purpose', status: 'running' as const },
+    ],
+  }))
+  await $.turn.start({ text: 'Fix login', turnId: 't1' })
+  let ui = await $.ui.mount({ plugin: 'agent-tree', surface: 'terminal', component: 'Pane', requestId: 'agent-tree', props: PROPS })
+  expect(await ui.find({ text: /TIMELINE/ })).toBeUndefined()
+  await ui.unmount()
+  await $.turn.start({ text: '', turnId: 't2', agentId: 'a1' })
+  await $.turn.complete({ turnId: 't2', agentId: 'a1', reason: 'answer', answer: '' })
+  await $.turn.start({ text: '', turnId: 't3', agentId: 'a2' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    ui = await $.ui.mount({ plugin: 'agent-tree', surface, component: 'Pane', requestId: 'agent-tree', props: PROPS })
+    expect(await ui.find({ text: /TIMELINE/ })).toBeDefined()
+    expect(await ui.find({ text: /^ Find auth cod ━·+\s+0:00$/ })).toBeDefined()
+    expect(await ui.find({ text: /^ Write login t ━·+\s+0:00$/ })).toBeDefined()
+    expect(await ui.find({ text: /^\s+0:00\s+0:01$/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

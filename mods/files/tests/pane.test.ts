@@ -11,12 +11,15 @@ const PROPS = {
 }
 
 // A fake disk, a git repo at /repo and HOME at /home/dev; Edit and Write change the disk
-const fakeHost = (on: On, disk: Record<string, string>, status = '') => {
+type Agent = { id: string; type: string; status: 'running' | 'completed' }
+const WRITER: Agent = { id: 'a1', type: 'general-purpose', status: 'running' }
+
+const fakeHost = (on: On, disk: Record<string, string>, status = '', agents: Agent[] = [WRITER]) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('command.register', () => ({ value: { command: 'files' } }))
   on('ui.open', () => ({ value: { isPlaced: false } }))
-  on('agent.list', () => ({ value: [{ id: 'a1', description: 'Write tests', type: 'general-purpose', status: 'running' as const }] }))
+  on('agent.list', () => ({ value: agents.map(a => ({ ...a, description: a.type })) }))
   on('clock.every', () => ({ value: undefined }))
   on('fs.read', (_$, e) => (e.path in disk ? { value: disk[e.path]! } : { deny: 'ENOENT' }))
   on('env.get', () => ({ value: '/home/dev' }))
@@ -98,4 +101,38 @@ test('files show which agents edited or read them once more than one agent is at
     expect(await ui.find({ text: /◆ b\.ts/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('two running agents editing one file are flagged, with a toast', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  const agents: Agent[] = [WRITER, { id: 'a2', type: 'Explore', status: 'running' }]
+  fakeHost(on, { '/repo/a.ts': 'x\n', '/repo/b.ts': 'y\n' }, '', agents)
+  await start($)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'x', new_string: 'z', agentId: 'a1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'z', new_string: 'w', agentId: 'a2' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'w', new_string: 'v', agentId: 'a1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/b.ts', old_string: 'y', new_string: 'q', agentId: 'a2' })
+  expect(toasts).toEqual(['⚠ a.ts is being edited by general-purpose and Explore at the same time'])
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await pane($, surface)
+    expect(await ui.find({ text: /⚠ 1 file edited by agents running at the same time/ })).toBeDefined()
+    expect(await ui.find({ text: /⚠ a\.ts/ })).toBeDefined()
+    expect(await ui.find({ text: /⚠ b\.ts/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('editing a file after the agent that edited it has finished is not a conflict', async ($, on) => {
+  const agents: Agent[] = [{ ...WRITER, status: 'completed' }]
+  fakeHost(on, { '/repo/a.ts': 'x\n' }, '', agents)
+  await start($)
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'x', new_string: 'z', agentId: 'a1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'z', new_string: 'w' })
+  const ui = await pane($)
+  expect(await ui.find({ text: /⚠/ })).toBeUndefined()
+  await ui.unmount()
 })

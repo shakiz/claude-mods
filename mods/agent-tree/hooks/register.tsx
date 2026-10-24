@@ -362,6 +362,45 @@ export const register: Register = on => {
       )
     }
 
+    // When each agent ran, on one time axis from the prompt's start, so parallel work lines up
+    const timeline = () => {
+      if (!r || rows.length < 2) return null
+      const t0 = r.startedAt
+      const ends = rows.map(x => (isLive(x.loop) ? now : x.loop.endedAt ?? now))
+      const span = Math.max(1000, (anyLive ? now : Math.max(...ends)) - t0)
+      const labelW = Math.min(14, Math.floor(width * 0.3))
+      const barW = Math.max(8, width - labelW - 7)
+      const at = (t: number) => Math.min(barW, Math.max(0, Math.round(((t - t0) / span) * barW)))
+      const shown = rows.slice(0, 8)
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor bold>
+            TIMELINE
+          </Text>
+          {shown.map(({ loop, depth }, i) => {
+            const a = at(loop.startedAt)
+            const b = Math.min(barW, Math.max(a + 1, at(ends[i]!)))
+            const label = (' '.repeat(depth) + loop.title).slice(0, labelW).padEnd(labelW)
+            const color = loop.phase === 'failed' ? 'error' : agentColor(loop.id)
+            return (
+              <Text key={loop.id} wrap="truncate-end">
+                <Text dimColor={!isLive(loop)}>{label}</Text>{' '}
+                <Text dimColor>{'·'.repeat(a)}</Text>
+                <Text color={color}>{'━'.repeat(b - a)}</Text>
+                <Text dimColor>{'·'.repeat(barW - b)}</Text>
+                <Text dimColor>{clock(ends[i]! - Math.max(t0, loop.startedAt)).padStart(6)}</Text>
+              </Text>
+            )
+          })}
+          <Text dimColor>
+            {' '.repeat(labelW + 1)}
+            {'0:00'.padEnd(barW - 4)}
+            {clock(span).padStart(4)}
+          </Text>
+        </Box>
+      )
+    }
+
     const doneRow = ({ loop, depth }: { loop: Loop; depth: number }) => {
       const mark = loop.phase === 'done' ? '✓' : loop.phase === 'aborted' ? '■' : '✗'
       const color = loop.phase === 'done' ? 'success' : loop.phase === 'aborted' ? 'warning' : 'error'
@@ -407,6 +446,7 @@ export const register: Register = on => {
           </Box>
         )}
         {done.slice(-8).map(doneRow)}
+        {timeline()}
       </Box>
     )
   })

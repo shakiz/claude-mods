@@ -26,6 +26,15 @@ const agentColor = (id: string) => {
 
 const addOnce = (list: string[] | undefined, id: string) => (list?.includes(id) ? list : [...(list ?? []), id])
 
+const ACTIVE = ['pending', 'running', 'waiting']
+
+// Sub-agents that have not finished: an edit after theirs to the same file can overwrite their work
+const activeAgents = ($: EngineInterface) =>
+  $.agent.list().then(
+    list => new Set(list.filter(a => ACTIVE.includes(a.status)).map(a => a.id)),
+    () => new Set<string>(),
+  )
+
 // Names an agent the first time it touches a file
 const tagAgent = async ($: EngineInterface, id: string) => {
   if ((await read($, agents))[id]) return
@@ -184,6 +193,17 @@ export const register: Register = on => {
       const before = baselines.get(p)
       if (after !== null && before != null) stat = diffStat(before, after)
     }
+    // Another sub-agent edited this file and is still running: the two may be overwriting each other
+    let clash: string[] = []
+    if (kind !== 'read' && !failed) {
+      const editedBy = (await read($, files))[p]?.editedBy ?? []
+      const others = editedBy.filter(id => id !== who && id !== MAIN)
+      if (others.length) {
+        const active = await activeAgents($)
+        clash = others.filter(id => active.has(id))
+      }
+    }
+    const isNewConflict = clash.length > 0 && !(await read($, files))[p]?.conflictWith?.length
     await touch(
       $,
       p,
@@ -198,8 +218,14 @@ export const register: Register = on => {
         removed: stat?.removed ?? f.removed,
         editedBy: kind !== 'read' && !failed ? addOnce(f.editedBy, who) : f.editedBy ?? [],
         readBy: kind === 'read' && !failed ? addOnce(f.readBy, who) : f.readBy ?? [],
+        conflictWith: clash.length ? [...clash, who].reduce(addOnce, f.conflictWith ?? []) : f.conflictWith,
       }),
     )
+    if (isNewConflict) {
+      const tags = await read($, agents)
+      const names = [...clash, who].map(id => tags[id]?.label ?? 'agent')
+      $.ui.toast(`⚠ ${splitPath(p).name} is being edited by ${names.join(' and ')} at the same time`, { timeoutMs: 8000 })
+    }
     if (kind !== 'read') await refreshGit($)
     return ran
   })
@@ -230,6 +256,7 @@ export const register: Register = on => {
             ? 'failed to edit'
             : 'edited'
     const changed = all.filter(f => f.edits > 0 || dirty.has(f.path)).length
+    const conflicts = all.filter(f => f.conflictWith?.length).length
     const tree = [...all].sort((a, b) => relative(a.path, base, homeDir).localeCompare(relative(b.path, base, homeDir)))
     const room = Math.max(3, (e.viewport?.rows ?? 30) - 12)
     const shown = tree.slice(0, room)
@@ -264,7 +291,11 @@ export const register: Register = on => {
                   </Text>
                 ))}
               {known.length > 1 && ' '}
-              <Text bold={f.isBusy} color={f.isFailed ? 'error' : f.isBusy ? EDIT_COLOR : undefined}>
+              {f.conflictWith?.length ? <Text color="error">⚠ </Text> : ''}
+              <Text
+                bold={f.isBusy}
+                color={f.isFailed || f.conflictWith?.length ? 'error' : f.isBusy ? EDIT_COLOR : undefined}
+              >
                 {name}
               </Text>
             </Text>
@@ -314,6 +345,11 @@ export const register: Register = on => {
             {changed} file{changed === 1 ? '' : 's'} changed
           </Text>
         </Box>
+        {conflicts > 0 && (
+          <Text color="error" wrap="truncate-end">
+            ⚠ {conflicts} file{conflicts === 1 ? '' : 's'} edited by agents running at the same time
+          </Text>
+        )}
         <Text>
           <Text color={READ_COLOR}>●</Text>
           <Text dimColor> read  </Text>
