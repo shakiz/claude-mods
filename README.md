@@ -13,6 +13,7 @@ A live **Agent tree** pane:
   - todo progress (`3/4 · Building pricing`), or the current step when there are no todos (thinking, writing, or the tool being called)
   - tokens, elapsed time and a progress bar
 - **FINISHED · n:** compact rows marked ✓, ✗ or ■ (stopped).
+- **TIMELINE:** once a sub-agent has run, one bar per agent on a shared time axis from the start of the prompt, so you can see which agents ran in parallel and which waited.
 - Each agent keeps one color, and the Files pane uses the same color for it.
 - **Status line:** a one-line summary while work is running, so progress is visible even with the pane closed.
 
@@ -26,6 +27,7 @@ A live **Files** pane:
 - **Branch line:** the current git branch and how many files have changed.
 - **File list:** every file Claude touched, grouped by folder. Each row has colored dots for *read*, *edited* and *not committed*, shows `editing…` while a change is in progress, then `+added −removed`: the lines Claude changed in that file this session, counted from a real diff.
 - **Agents:** once more than one agent has touched files, a legend lists them in their Agent tree colors, and each file shows ◆ for every agent that edited it and ◇ for one that only read it.
+- **Conflicts:** when an agent edits a file that another sub-agent has edited and is still running, the file is marked ⚠, a count appears under the branch line, and a toast names both agents.
 
 Toggle it with `/files`.
 
