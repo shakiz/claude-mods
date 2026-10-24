@@ -10,11 +10,28 @@ const run = atom({ plugin: 'agent-tree', key: 'run' } as const, null as Run | nu
 const tick = atom({ plugin: 'agent-tree', key: 'tick' } as const, 0)
 
 const LIVE: Phase[] = ['starting', 'thinking', 'writing', 'calling', 'tools']
-const COLORS = ['warning', 'suggestion', 'success', 'claude', 'permission', 'planMode'] as const
+const COLORS = ['suggestion', 'success', 'permission', 'planMode', 'merged', 'remember', 'autoAccept', 'ide'] as const
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const LABEL_KEYS = ['description', 'command', 'file_path', 'notebook_path', 'pattern', 'query', 'url', 'subject', 'skill', 'prompt']
 
 const isLive = (l: Loop) => LIVE.includes(l.phase)
+
+// One color per agent, from its id, so the files pane colors the same agent the same way
+const agentColor = (id: string) => {
+  if (id === MAIN) return 'claude'
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return COLORS[h % COLORS.length]!
+}
+
+const contextMeter = (used: number, window: number) => {
+  const pct = Math.min(100, Math.round((used / window) * 100))
+  const cells = Math.round(pct / 20)
+  return {
+    text: `${'▰'.repeat(cells)}${'▱'.repeat(5 - cells)} ${pct}%`,
+    color: pct >= 85 ? 'error' : pct >= 60 ? 'warning' : undefined,
+  }
+}
 
 const oneLine = (s: string, max = 80) => {
   const line = s.replace(/\s+/g, ' ').trim()
@@ -187,7 +204,18 @@ export const register: Register = on => {
         const u = c.usage
         // Cache reads re-count the whole prompt on every step, so only new tokens are summed
         const n = u.input_tokens + u.output_tokens + (u.cache_creation_input_tokens ?? 0)
-        await patch($, id, l => ({ ...l, tokens: l.tokens + n }))
+        // What this step's prompt filled of the window, cache reads included
+        const context = u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+        const window =
+          id === MAIN
+            ? await $.session.usage().then(
+                x => x.context.window,
+                () => undefined,
+              )
+            : /\[1m\]$/.test(e.model)
+              ? 1_000_000
+              : 200_000
+        await patch($, id, l => ({ ...l, tokens: l.tokens + n, context, window: window ?? l.window }))
       }
       yield c
     }
@@ -261,8 +289,8 @@ export const register: Register = on => {
       </Box>
     )
 
-    const card = ({ loop, depth }: { loop: Loop; depth: number }, i: number) => {
-      const color = COLORS[i % COLORS.length]
+    const card = ({ loop, depth }: { loop: Loop; depth: number }) => {
+      const color = agentColor(loop.id)
       const inner = Math.max(8, width - depth * 2 - 4)
       const elapsed = (loop.endedAt && !isLive(loop) ? loop.endedAt : now) - loop.startedAt
       const finished = loop.todos.filter(t => t.status === 'completed').length
@@ -285,6 +313,7 @@ export const register: Register = on => {
       }
       const meta = [loop.id === MAIN ? 'main' : loop.type, prettyModel(loop.model), loop.effort].filter(Boolean)
       const [pre, mid, post] = bar.rest.split('\u0000')
+      const meter = loop.context && loop.window ? contextMeter(loop.context, loop.window) : undefined
 
       return (
         <Box key={loop.id} flexDirection="column" marginLeft={depth * 2} borderStyle="round" borderColor={color} paddingX={1}>
@@ -294,10 +323,20 @@ export const register: Register = on => {
             </Text>
             <Text color={color}>●</Text>
           </Box>
-          <Text wrap="truncate-end">
-            <Text color={color}>{meta[0] ?? ''}</Text>
-            <Text dimColor>{meta.length > 1 ? ' ' + meta.slice(1).join(' · ') : ''}</Text>
-          </Text>
+          <Box justifyContent="space-between">
+            <Box flexShrink={1}>
+              <Text wrap="truncate-end">
+                <Text color={color}>{meta[0] ?? ''}</Text>
+                <Text dimColor>{meta.length > 1 ? ' ' + meta.slice(1).join(' · ') : ''}</Text>
+              </Text>
+            </Box>
+            {meter && (
+              <Text color={meter.color} dimColor={!meter.color}>
+                {' '}
+                ctx {meter.text}
+              </Text>
+            )}
+          </Box>
           <Box justifyContent="space-between">
             <Box flexShrink={1}>
               <Text wrap="truncate-end">{step}</Text>
@@ -359,7 +398,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {live.length === 0 && <Text dimColor>Idle.</Text>}
-        {live.map((x, i) => card(x, i))}
+        {live.map(card)}
         {done.length > 0 && (
           <Box marginTop={1}>
             <Text dimColor bold>

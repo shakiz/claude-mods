@@ -9,9 +9,11 @@ A live **Agent tree** pane:
 - **Header tiles:** Cost, Tokens and Time for the current prompt.
 - **RUNNING · n:** a card for each running agent, with sub-agents indented under the agent that started them. Each card shows:
   - the task title, plus the agent type, model and effort
+  - a context meter (`ctx ▰▰▰▱▱ 62%`): how full the agent's context window is, in the warning color from 60% and the error color from 85%, near auto-compaction
   - todo progress (`3/4 · Building pricing`), or the current step when there are no todos (thinking, writing, or the tool being called)
   - tokens, elapsed time and a progress bar
 - **FINISHED · n:** compact rows marked ✓, ✗ or ■ (stopped).
+- Each agent keeps one color, and the Files pane uses the same color for it.
 - **Status line:** a one-line summary while work is running, so progress is visible even with the pane closed.
 
 Toggle it with `/tree`.
@@ -23,6 +25,7 @@ A live **Files** pane:
 - **RIGHT NOW:** which file Claude is reading or editing, and its folder.
 - **Branch line:** the current git branch and how many files have changed.
 - **File list:** every file Claude touched, grouped by folder. Each row has colored dots for *read*, *edited* and *not committed*, shows `editing…` while a change is in progress, then `+added −removed`: the lines Claude changed in that file this session, counted from a real diff.
+- **Agents:** once more than one agent has touched files, a legend lists them in their Agent tree colors, and each file shows ◆ for every agent that edited it and ◇ for one that only read it.
 
 Toggle it with `/files`.
 

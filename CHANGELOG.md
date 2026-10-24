@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- agent-tree: each card shows a context meter, `ctx ▰▰▰▱▱ 62%`, in the warning color from 60% and the error color from 85%.
+- agent-tree: an agent's color comes from its id, so it stays the same while agents start and finish.
+- files: with more than one agent at work, a legend names the agents, and each file marks who edited it (◆) or only read it (◇), in the same colors as the Agent tree.
+
 ## 0.2.1
 
 - agent-tree: the token count no longer adds cache reads, which re-counted the whole prompt on every step.

@@ -1,1 +1,1 @@
-{ "name": "files", "version": "0.2.1", "description": "Live pane of the files Claude reads and changes, and which are done", "author": { "name": "shakiz" }, "types": "./types/index.d.ts" }
+{ "name": "files", "version": "0.3.0", "description": "Live pane of the files Claude reads and changes, and which are done", "author": { "name": "shakiz" }, "types": "./types/index.d.ts" }
