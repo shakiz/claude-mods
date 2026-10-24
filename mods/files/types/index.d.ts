@@ -21,6 +21,7 @@ declare module 'claude-code' {
       files: Record<string, FileEntry>
       git: GitInfo | null
       cwd: string
+      home: string
     }
   }
 }

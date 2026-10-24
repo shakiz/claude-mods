@@ -185,7 +185,8 @@ export const register: Register = on => {
         await patch($, id, l => ({ ...l, phase, activity: c.name }))
       } else if (c.kind === 'stop' && c.usage) {
         const u = c.usage
-        const n = u.input_tokens + u.output_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+        // Cache reads re-count the whole prompt on every step, so only new tokens are summed
+        const n = u.input_tokens + u.output_tokens + (u.cache_creation_input_tokens ?? 0)
         await patch($, id, l => ({ ...l, tokens: l.tokens + n }))
       }
       yield c

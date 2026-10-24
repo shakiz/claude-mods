@@ -7,20 +7,57 @@ const PANE = 'files'
 const files = atom({ plugin: 'files', key: 'files' } as const, {} as Record<string, FileEntry>)
 const git = atom({ plugin: 'files', key: 'git' } as const, null as GitInfo | null)
 const cwd = atom({ plugin: 'files', key: 'cwd' } as const, '')
+const home = atom({ plugin: 'files', key: 'home' } as const, '')
 
 const READ_COLOR = 'suggestion'
 const EDIT_COLOR = 'claude'
 const DIRTY_COLOR = 'warning'
 
-const lineCount = (s: string) => (s ? s.split('\n').length : 0)
+// Each file's text before Claude first changed it: '' for a new file, null when unreadable
+const baselines = new Map<string, string | null>()
+
+const lines = (s: string) => (s ? s.replace(/\n$/, '').split('\n') : [])
+
+// Lines added and removed between two texts: trims the shared start and end, then an LCS over the rest
+const diffStat = (before: string, after: string) => {
+  const a = lines(before)
+  const b = lines(after)
+  let lo = 0
+  while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++
+  let ea = a.length
+  let eb = b.length
+  while (ea > lo && eb > lo && a[ea - 1] === b[eb - 1]) ea--, eb--
+  const x = a.slice(lo, ea)
+  const y = b.slice(lo, eb)
+  // Too big to compare line by line: count the whole changed span
+  if (x.length * y.length > 4_000_000) return { added: y.length, removed: x.length }
+  let prev = new Array<number>(y.length + 1).fill(0)
+  for (const line of x) {
+    const row = new Array<number>(y.length + 1).fill(0)
+    for (let j = 0; j < y.length; j++) row[j + 1] = line === y[j] ? prev[j]! + 1 : Math.max(prev[j + 1]!, row[j]!)
+    prev = row
+  }
+  const same = prev[y.length]!
+  return { added: y.length - same, removed: x.length - same }
+}
+
+const readText = ($: EngineInterface, path: string) =>
+  $.fs.read(path).then(
+    t => t as string,
+    () => null,
+  )
 
 const splitPath = (p: string) => {
   const i = p.lastIndexOf('/')
   return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i), name: p.slice(i + 1) }
 }
 
-const relative = (path: string, base: string) =>
-  base && path.startsWith(base + '/') ? path.slice(base.length + 1) : path.replace(/^\/Users\/[^/]+/, '~')
+const relative = (path: string, base: string, homeDir: string) =>
+  base && path.startsWith(base + '/')
+    ? path.slice(base.length + 1)
+    : homeDir && path.startsWith(homeDir + '/')
+      ? '~' + path.slice(homeDir.length)
+      : path
 
 const refreshGit = async ($: EngineInterface) => {
   try {
@@ -28,10 +65,14 @@ const refreshGit = async ($: EngineInterface) => {
     if (top.exitCode !== 0) return void (await update($, git, () => null))
     const [root = '', branch = ''] = top.stdout.trim().split('\n')
     const st = await $.process.run(['git', 'status', '--porcelain', '-z', '--untracked-files=all'], { cwd: root })
-    const dirty = st.stdout
-      .split('\0')
-      .filter(x => x.length > 3)
-      .map(x => root + '/' + x.slice(3))
+    const dirty: string[] = []
+    const entries = st.stdout.split('\0')
+    for (let i = 0; i < entries.length; i++) {
+      const x = entries[i]!
+      if (x.length > 3) dirty.push(root + '/' + x.slice(3))
+      // A rename or copy is followed by its original path, which has no status
+      if (x[0] === 'R' || x[0] === 'C') i++
+    }
     await update($, git, () => ({ root, branch, dirty }))
   } catch {
     await update($, git, () => null)
@@ -65,6 +106,8 @@ export const register: Register = on => {
     await $.command.register({ name: 'files', description: 'Toggle the live files pane' })
     const dir = await $.session.cwd()
     await update($, cwd, () => dir)
+    const homeDir = await $.env.get('HOME')
+    await update($, home, () => homeDir ?? '')
     await refreshGit($)
     void $.ui.open({ id: PANE, title: 'Files' })
     $.clock.every(10_000, () => void refreshGit($))
@@ -84,32 +127,33 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     let path: string | undefined
     let op: FileOp | undefined
-    let added = 0
-    let removed = 0
     if (e.tool === 'Read') {
       path = e.file_path
       op = 'read'
     } else if (e.tool === 'Edit') {
       path = e.file_path
       op = 'edit'
-      added = lineCount(e.new_string)
-      removed = lineCount(e.old_string)
     } else if (e.tool === 'Write') {
       path = e.file_path
       op = 'write'
-      added = lineCount(e.content)
     } else if (e.tool === 'NotebookEdit') {
       path = e.notebook_path
       op = 'edit'
-      added = lineCount(e.new_source)
     }
     if (!path || !op) return next(e)
 
     const p = path
     const kind = op
     await touch($, p, kind, f => ({ ...f, lastOp: kind, isBusy: true, isFailed: false }), e.agentId)
+    if (kind !== 'read' && !baselines.has(p)) baselines.set(p, (await readText($, p)) ?? '')
     const ran = await next(e)
     const failed = 'deny' in ran || ran.isError === true
+    let stat: { added: number; removed: number } | undefined
+    if (kind !== 'read' && !failed) {
+      const after = await readText($, p)
+      const before = baselines.get(p)
+      if (after !== null && before != null) stat = diffStat(before, after)
+    }
     await touch(
       $,
       p,
@@ -120,8 +164,8 @@ export const register: Register = on => {
         isFailed: failed,
         reads: f.reads + (kind === 'read' && !failed ? 1 : 0),
         edits: f.edits + (kind !== 'read' && !failed ? 1 : 0),
-        added: f.added + (kind !== 'read' && !failed ? added : 0),
-        removed: f.removed + (kind !== 'read' && !failed ? removed : 0),
+        added: stat?.added ?? f.added,
+        removed: stat?.removed ?? f.removed,
       }),
       e.agentId,
     )
@@ -134,6 +178,7 @@ export const register: Register = on => {
     const all = Object.values(await read($, files))
     const repo = await read($, git)
     const base = repo?.root ?? (await read($, cwd))
+    const homeDir = await read($, home)
     const width = Math.max(24, e.props.bodyColumns)
     const dirty = new Set(repo?.dirty ?? [])
 
@@ -152,14 +197,14 @@ export const register: Register = on => {
             ? 'failed to edit'
             : 'edited'
     const changed = all.filter(f => f.edits > 0 || dirty.has(f.path)).length
-    const tree = [...all].sort((a, b) => relative(a.path, base).localeCompare(relative(b.path, base)))
+    const tree = [...all].sort((a, b) => relative(a.path, base, homeDir).localeCompare(relative(b.path, base, homeDir)))
     const room = Math.max(3, (e.viewport?.rows ?? 30) - 12)
     const shown = tree.slice(0, room)
 
     let lastDir: string | null = null
     const rows: RenderChildren[] = []
     for (const f of shown) {
-      const { dir, name } = splitPath(relative(f.path, base))
+      const { dir, name } = splitPath(relative(f.path, base, homeDir))
       if (dir !== lastDir) {
         rows.push(
           <Text key={'d:' + dir} dimColor wrap="truncate-start">
@@ -212,7 +257,7 @@ export const register: Register = on => {
             )}
             {latest && (
               <Text dimColor wrap="truncate-start">
-                in {splitPath(relative(latest.path, base)).dir || '.'}
+                in {splitPath(relative(latest.path, base, homeDir)).dir || '.'}
               </Text>
             )}
           </Box>
