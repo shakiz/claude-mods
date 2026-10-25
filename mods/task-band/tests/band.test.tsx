@@ -41,3 +41,23 @@ test('close hides the band', async ($, on) => {
   expect(await ui.find({ text: /Tasks 2\/4/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('without a task list the band shows what the turn is doing, and leaves when it ends', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  await $.turn.start({ text: 'Plan the road curves', turnId: 't1' })
+  let ui = await $.ui.mount({ plugin: 'task-band', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
+  expect(await ui.find({ text: /Plan the road curves/ })).toBeDefined()
+  expect(await ui.find({ text: / Thinking / })).toBeDefined()
+  expect(await ui.find({ text: /0:0\d/ })).toBeDefined()
+  expect(await ui.find({ text: /×1/ })).toBeDefined()
+  await ui.unmount()
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: '' })
+  ui = await $.ui.mount({ plugin: 'task-band', surface: 'terminal', component: 'AbovePrompt', props: { ...PROPS, isWorking: false } })
+  expect(await ui.find({ text: /Plan the road curves/ })).toBeUndefined()
+  await ui.unmount()
+})

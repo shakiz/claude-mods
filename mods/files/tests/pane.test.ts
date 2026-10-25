@@ -119,9 +119,9 @@ test('two running agents editing one file are flagged, with a toast', async ($, 
   expect(toasts).toEqual(['⚠ a.ts is being edited by general-purpose and Explore at the same time'])
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await pane($, surface)
-    expect(await ui.find({ text: /⚠ 1 file edited by agents running at the same time/ })).toBeDefined()
-    expect(await ui.find({ text: /⚠ a\.ts/ })).toBeDefined()
-    expect(await ui.find({ text: /⚠ b\.ts/ })).toBeUndefined()
+    expect(await ui.find({ text: /! 1 file edited by agents running at the same time/ })).toBeDefined()
+    expect(await ui.find({ text: /! a\.ts/ })).toBeDefined()
+    expect(await ui.find({ text: /! b\.ts/ })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -133,6 +133,6 @@ test('editing a file after the agent that edited it has finished is not a confli
   await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'x', new_string: 'z', agentId: 'a1' })
   await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'z', new_string: 'w' })
   const ui = await pane($)
-  expect(await ui.find({ text: /⚠/ })).toBeUndefined()
+  expect(await ui.find({ text: /! / })).toBeUndefined()
   await ui.unmount()
 })
