@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- task-band: a new band above the prompt shows the task list's title, a pixel progress bar with a `Tasks 2/4` pill, the done percent and how many agents are running. ✕ hides it until the next prompt.
+- agent-tree: a new card design. Each agent is a small pixel Clawd: the main agent wears a crown, and each sub-agent gets its own hat in its own color. Cards show a status mark (spinner, ✓, ✗ or ■) and a progress bar in the agent's color, and are split by lines instead of boxes.
+- agent-tree: finished agents keep their full cards under **Finished · n**, which folds away with a click.
+- agent-tree: the context meter reads `ctx 62%`, keeping its warning and error colors.
+
 ## 0.4.0
 
 - agent-tree: a TIMELINE section, shown once a sub-agent has run, draws one bar per agent on a shared time axis from the prompt's start, so you can see which agents ran in parallel.
