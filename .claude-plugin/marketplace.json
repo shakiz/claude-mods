@@ -1,9 +1,10 @@
 {
   "name": "claude-panes",
   "owner": { "name": "shakiz" },
-  "description": "Live side panes for Claude Code: the agent tree and the files Claude touches",
+  "description": "Live panes and a band for Claude Code: the agent tree, the files Claude touches, and task progress above the prompt",
   "plugins": [
     { "name": "agent-tree", "source": "./mods/agent-tree" },
-    { "name": "files", "source": "./mods/files" }
+    { "name": "files", "source": "./mods/files" },
+    { "name": "task-band", "source": "./mods/task-band" }
   ]
 }
