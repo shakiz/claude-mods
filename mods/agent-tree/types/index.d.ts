@@ -18,6 +18,8 @@ export type Loop = {
   context?: number
   window?: number
   todos: Todo[]
+  // Which hat the agent's icon wears, in the order agents started
+  icon?: number
 }
 
 export type Run = { startedAt: number; endedAt?: number; costAtStart: number; cost: number }
@@ -28,6 +30,7 @@ declare module 'claude-code' {
       loops: Record<string, Loop>
       run: Run | null
       tick: number
+      isFinishedCollapsed: boolean
     }
   }
 }

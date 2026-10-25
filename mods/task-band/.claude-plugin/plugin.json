@@ -1,0 +1,1 @@
+{ "name": "task-band", "version": "0.5.0", "description": "A band above the prompt with the task list's progress, done percent and running agents", "author": { "name": "shakiz" }, "types": "./types/index.d.ts" }
