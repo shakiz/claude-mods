@@ -238,7 +238,7 @@ export const register: Register = on => {
     const homeDir = await read($, home)
     const tags = await read($, agents)
     const known = Object.entries(tags).sort((a, b) => a[1].firstSeen - b[1].firstSeen)
-    const width = Math.max(24, e.props.bodyColumns)
+    const width = Math.max(1, e.props.bodyColumns)
     const dirty = new Set(repo?.dirty ?? [])
 
     const busy = all.filter(f => f.isBusy).sort((a, b) => b.touchedAt - a.touchedAt)[0]
@@ -291,7 +291,7 @@ export const register: Register = on => {
                   </Text>
                 ))}
               {known.length > 1 && ' '}
-              {f.conflictWith?.length ? <Text color="error">⚠ </Text> : ''}
+              {f.conflictWith?.length ? <Text color="error" bold>! </Text> : ''}
               <Text
                 bold={f.isBusy}
                 color={f.isFailed || f.conflictWith?.length ? 'error' : f.isBusy ? EDIT_COLOR : undefined}
@@ -336,7 +336,9 @@ export const register: Register = on => {
             )}
           </Box>
         </Box>
-        <Text dimColor>{'─'.repeat(width)}</Text>
+        <Text dimColor wrap="truncate-end">
+          {'─'.repeat(width)}
+        </Text>
         <Box justifyContent="space-between">
           <Text>
             <Text color={READ_COLOR}>⑂</Text> <Text bold>{repo?.branch ?? 'no git'}</Text>
@@ -347,7 +349,7 @@ export const register: Register = on => {
         </Box>
         {conflicts > 0 && (
           <Text color="error" wrap="truncate-end">
-            ⚠ {conflicts} file{conflicts === 1 ? '' : 's'} edited by agents running at the same time
+            <Text bold>!</Text> {conflicts} file{conflicts === 1 ? '' : 's'} edited by agents running at the same time
           </Text>
         )}
         <Text>
