@@ -279,13 +279,17 @@ export const register: Register = on => {
     const r = await read($, run)
     const beat = await read($, tick)
     const now = Date.now()
-    const width = Math.max(24, e.props.bodyColumns)
+    const width = Math.max(1, e.props.bodyColumns)
+    // Below these widths the icons and tiles would push rows past the pane's edge
+    const hasIcons = width >= 32
+    const hasTiles = width >= 36
     const rows = ordered(all)
     const live = rows.filter(x => isLive(x.loop))
     const done = rows.filter(x => !isLive(x.loop))
     const total = rows.reduce((s, x) => s + x.loop.tokens, 0)
     const anyLive = live.length > 0
     const runMs = r ? (anyLive ? now : r.endedAt ?? now) - r.startedAt : 0
+    const costText = r ? `≈$${Math.max(0, r.cost - r.costAtStart).toFixed(2)}` : '—'
 
     const tile = (label: string, value: string) => (
       <Box flexDirection="column" flexGrow={1} borderStyle="round" borderDimColor paddingX={1}>
@@ -297,7 +301,7 @@ export const register: Register = on => {
     const card = ({ loop, depth }: { loop: Loop; depth: number }) => {
       const color = agentColor(loop.id)
       const running = isLive(loop)
-      const inner = Math.max(8, width - depth * 2 - ICON_W - 2)
+      const inner = Math.max(1, width - depth * 2 - (hasIcons ? ICON_W + 2 : 0))
       const elapsed = (loop.endedAt && !running ? loop.endedAt : now) - loop.startedAt
       const finished = loop.todos.filter(t => t.status === 'completed').length
       const current = loop.todos.find(t => t.status === 'in_progress')
@@ -335,14 +339,16 @@ export const register: Register = on => {
       return (
         <Box key={loop.id} flexDirection="column" marginLeft={depth * 2}>
           <Box flexDirection="row">
-            <Box flexDirection="column" width={ICON_W} marginRight={2} flexShrink={0}>
-              <Text color={color}>{hat}</Text>
-              {BODY.map((row, i) => (
-                <Text key={String(i)} color="claude" dimColor={!running && loop.phase !== 'done'}>
-                  {row}
-                </Text>
-              ))}
-            </Box>
+            {hasIcons && (
+              <Box flexDirection="column" width={ICON_W} marginRight={2} flexShrink={0}>
+                <Text color={color}>{hat}</Text>
+                {BODY.map((row, i) => (
+                  <Text key={String(i)} color="claude" dimColor={!running && loop.phase !== 'done'}>
+                    {row}
+                  </Text>
+                ))}
+              </Box>
+            )}
             <Box flexDirection="column" flexGrow={1} flexShrink={1}>
               <Box justifyContent="space-between">
                 <Box flexShrink={1}>
@@ -372,21 +378,23 @@ export const register: Register = on => {
                   {tokens(loop.tokens)} · {clock(elapsed)}
                 </Text>
               </Box>
-              <Text>
+              <Text wrap="truncate-end">
                 <Text dimColor>{bar[0]}</Text>
                 <Text color={barColor}>{bar[1]}</Text>
                 <Text dimColor>{bar[2]}</Text>
               </Text>
             </Box>
           </Box>
-          <Text dimColor>{'─'.repeat(Math.max(1, width - depth * 2))}</Text>
+          <Text dimColor wrap="truncate-end">
+            {'─'.repeat(Math.max(1, width - depth * 2))}
+          </Text>
         </Box>
       )
     }
 
     // When each agent ran, on one time axis from the prompt's start, so parallel work lines up
     const timeline = () => {
-      if (!r || rows.length < 2) return null
+      if (!r || rows.length < 2 || width < 30) return null
       const t0 = r.startedAt
       const ends = rows.map(x => (isLive(x.loop) ? now : x.loop.endedAt ?? now))
       const span = Math.max(1000, (anyLive ? now : Math.max(...ends)) - t0)
@@ -429,11 +437,17 @@ export const register: Register = on => {
         <Text dimColor wrap="truncate-end">
           {all[MAIN]?.title ?? 'Nothing has run yet'}
         </Text>
-        <Box flexDirection="row" gap={1} marginTop={1}>
-          {tile('Cost', r ? `≈$${Math.max(0, r.cost - r.costAtStart).toFixed(2)}` : '—')}
-          {tile('Tokens', tokens(total))}
-          {tile('Time', clock(runMs))}
-        </Box>
+        {hasTiles ? (
+          <Box flexDirection="row" gap={1} marginTop={1}>
+            {tile('Cost', costText)}
+            {tile('Tokens', tokens(total))}
+            {tile('Time', clock(runMs))}
+          </Box>
+        ) : (
+          <Text bold wrap="truncate-end">
+            {costText} · {tokens(total)} · {clock(runMs)}
+          </Text>
+        )}
         <Box marginTop={1}>
           <Text dimColor bold>
             Running · {live.length}

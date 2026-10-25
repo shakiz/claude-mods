@@ -8,10 +8,13 @@ const tasks = atom({ plugin: 'task-band', key: 'tasks' } as const, [] as Task[])
 const agents = atom({ plugin: 'task-band', key: 'agents' } as const, [] as string[])
 const isHidden = atom({ plugin: 'task-band', key: 'isHidden' } as const, false)
 const tick = atom({ plugin: 'task-band', key: 'tick' } as const, 0)
+const activity = atom({ plugin: 'task-band', key: 'activity' } as const, '')
+const startedAt = atom({ plugin: 'task-band', key: 'startedAt' } as const, 0)
 
 const ACCENT = '#8b84e8'
 const INK = '#16152b'
 const TITLE_MAX = 22
+const PILL_MAX = 18
 // Clawd's top row: the mascot in one line
 const MASCOT = '▐▛█▜▌'
 const FILLED = '▚▞▙▟▛▜▀▄▌▐▖▗▘▝'
@@ -20,6 +23,12 @@ const SPARSE = '·▖▗▘▝'
 const oneLine = (s: string, max: number) => {
   const line = s.replace(/\s+/g, ' ').trim()
   return line.length > max ? line.slice(0, max - 1) + '…' : line
+}
+
+const clock = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(s / 60)
+  return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 
 // A stable pseudo-random pick per cell, so the pixels hold still between redraws
@@ -41,12 +50,10 @@ const setTasks = ($: EngineInterface, fn: (all: Task[]) => Task[]) => update($, 
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    // Shimmer the pixels only while a turn runs and there is a list to show
+    // Animate only while an agent runs
     $.clock.every(450, () => {
       void (async () => {
-        const all = await read($, tasks)
-        const live = await read($, agents)
-        if (all.length && live.length) await update($, tick, n => n + 1)
+        if ((await read($, agents)).length) await update($, tick, n => n + 1)
       })()
     })
     return next(e)
@@ -61,12 +68,15 @@ export const register: Register = on => {
     }
 
     await update($, agents, all => (all.includes('main') ? all : [...all, 'main']))
+    await update($, activity, () => 'Thinking')
     if (e.text) {
       await update($, isHidden, () => false)
+      await update($, startedAt, () => Date.now())
       const all = await read($, tasks)
+      const isFinished = all.every(t => t.status === 'completed')
       // A new prompt after a finished list starts over
-      if (all.length && all.every(t => t.status === 'completed')) await setTasks($, () => [])
-      if (!all.length || all.every(t => t.status === 'completed')) await update($, title, () => oneLine(e.text, TITLE_MAX))
+      if (all.length && isFinished) await setTasks($, () => [])
+      if (isFinished) await update($, title, () => oneLine(e.text, TITLE_MAX))
     }
     return next(e)
   })
@@ -78,8 +88,10 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    // Only the main loop's list: sub-agents keep their own
+    // Only the main loop's list and steps: sub-agents keep their own
     if (e.agentId) return next(e)
+
+    await update($, activity, () => (e.tool === 'Agent' ? 'Delegating' : e.tool))
 
     if (e.tool === 'TodoWrite') {
       await setTasks($, () => e.todos.map((t, i) => ({ id: String(i), text: t.content, status: t.status })))
@@ -87,6 +99,7 @@ export const register: Register = on => {
     }
 
     const ran = await next(e)
+    await update($, activity, () => 'Thinking')
 
     if (e.tool === 'TaskCreate' && ran.result && !ran.isError) {
       const task = (ran.result as { task?: { id: string } }).task
@@ -104,40 +117,61 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const all = await read($, tasks)
-    if (e.props.hasSurvey || !all.length || (await read($, isHidden))) return next(e)
+    const live = await read($, agents)
+    // With a list the band stays until the next prompt; without one, only while a turn runs
+    const isShown = all.length > 0 || (e.props.isWorking && live.includes('main'))
+    if (e.props.hasSurvey || !isShown || (await read($, isHidden))) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const live = await read($, agents)
     const beat = await read($, tick)
-    const name = (await read($, title)) || 'Tasks'
+    const name = (await read($, title)) || 'Working'
+    const hasList = all.length > 0
     const done = all.filter(t => t.status === 'completed').length
-    const pct = Math.round((done / all.length) * 100)
     const isBordered = e.props.maxRows >= 3
 
-    const pill = ` Tasks ${done}/${all.length} `
-    const pctText = `${pct}%`.padStart(4)
+    const pill = hasList ? ` Tasks ${done}/${all.length} ` : ` ${oneLine((await read($, activity)) || 'Thinking', PILL_MAX)} `
+    const right = hasList ? `${Math.round((done / all.length) * 100)}%`.padStart(4) : clock(Date.now() - (await read($, startedAt))).padStart(5)
     const count = live.length ? `×${live.length}` : ''
     // Dot, title and the right-hand group, each with its gap; the bar takes the rest
     const used =
-      (isBordered ? 4 : 0) + 2 + name.length + 2 + 2 + pctText.length + 2 + MASCOT.length + (count ? 1 + count.length : 0) + 2 + 1
+      (isBordered ? 4 : 0) + 2 + name.length + 2 + 2 + right.length + 2 + MASCOT.length + (count ? 1 + count.length : 0) + 2 + 1
     const barW = Math.max(pill.length + 6, e.props.bodyColumns - used)
 
-    // The pill sits on the edge of the filled part, kept inside the track
-    const edge = Math.round((done / all.length) * barW)
-    const start = Math.min(barW - pill.length - 2, Math.max(0, edge - Math.floor(pill.length / 2) - 1))
+    // With a list the pill sits on the edge of the filled part; without one it holds the middle
+    // and a lit window sweeps through the track
+    const edge = Math.round((done / Math.max(1, all.length)) * barW)
+    const center = hasList ? edge : Math.floor(barW / 2)
+    const start = Math.min(barW - pill.length - 2, Math.max(0, center - Math.floor(pill.length / 2) - 1))
     const end = start + pill.length + 2
+    const sweepW = Math.max(4, Math.floor(barW / 4))
+    const sweep = ((beat * 3) % (barW + sweepW)) - sweepW
+    const isLit = (i: number) => (hasList ? i < edge : i >= sweep && i < sweep + sweepW)
     const seed = e.props.isWorking ? beat : 0
-    const cells = (from: number, to: number, isFilled: boolean) => {
-      let s = ''
-      for (let i = from; i < to; i++) s += pixel(i, seed, isFilled)
-      return s
+    const segment = (from: number, to: number) => {
+      // Runs of lit and unlit cells, each in its own color
+      const runs: { lit: boolean; text: string }[] = []
+      for (let i = from; i < to; i++) {
+        const lit = isLit(i)
+        const last = runs[runs.length - 1]
+        if (last && last.lit === lit) last.text += pixel(i, seed, lit)
+        else runs.push({ lit, text: pixel(i, seed, lit) })
+      }
+      return (
+        <Text>
+          {runs.map((r, i) =>
+            r.lit ? (
+              <Text key={String(i)} color={ACCENT}>
+                {r.text}
+              </Text>
+            ) : (
+              <Text key={String(i)} dimColor>
+                {r.text}
+              </Text>
+            ),
+          )}
+        </Text>
+      )
     }
-    const segment = (from: number, to: number) => (
-      <Text>
-        <Text color={ACCENT}>{cells(from, Math.min(to, Math.max(from, edge)), true)}</Text>
-        <Text dimColor>{cells(Math.max(from, Math.min(to, edge)), to, false)}</Text>
-      </Text>
-    )
 
     return (
       <Box
@@ -157,7 +191,7 @@ export const register: Register = on => {
           <Text color={ACCENT}>▌</Text>
           {segment(end, barW)}
           {'  '}
-          <Text dimColor>{pctText}</Text>
+          <Text dimColor>{right}</Text>
           {'  '}
           <Text color="claude">{MASCOT}</Text>
           {count ? ` ${count}` : ''}

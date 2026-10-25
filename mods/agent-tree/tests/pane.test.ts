@@ -120,3 +120,20 @@ test('agents running together wear different hats, and finished ones fold away',
   expect(await ui.find({ text: /Build the page/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('a narrow pane drops the icons and tiles, and no row is wider than the pane', async ($, on) => {
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'Fix login', turnId: 't1' })
+  const ui = await $.ui.mount({
+    plugin: 'agent-tree',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'agent-tree',
+    props: { ...PROPS, bodyColumns: 20 },
+  })
+  expect(await ui.find({ text: /^ ▗▙▟▙▖ $/ })).toBeUndefined()
+  expect(await ui.find({ text: /^Cost$/ })).toBeUndefined()
+  expect(await ui.find({ text: /^≈\$0\.00 · 0 · 0:0\d$/ })).toBeDefined()
+  for (const t of await ui.findAll({ text: /^─+$/ })) expect(t.text.length).toBeLessThanOrEqual(20)
+  await ui.unmount()
+})
