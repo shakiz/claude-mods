@@ -8,10 +8,16 @@ const MAIN = 'main'
 const loops = atom({ plugin: 'agent-tree', key: 'loops' } as const, {} as Record<string, Loop>)
 const run = atom({ plugin: 'agent-tree', key: 'run' } as const, null as Run | null)
 const tick = atom({ plugin: 'agent-tree', key: 'tick' } as const, 0)
+const isFinishedCollapsed = atom({ plugin: 'agent-tree', key: 'isFinishedCollapsed' } as const, false)
 
 const LIVE: Phase[] = ['starting', 'thinking', 'writing', 'calling', 'tools']
 const COLORS = ['suggestion', 'success', 'permission', 'planMode', 'merged', 'remember', 'autoAccept', 'ide'] as const
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+// Each agent is a small Clawd: the body in Claude's color, a hat of its own in the agent's color
+const BODY = ['▐▛███▜▌', '▝▜███▛▘', ' ▘▘ ▝▝ ']
+const CROWN = ' ▗▙▟▙▖ '
+const HATS = [' ▄▄▄▄▄▖', ' ▗███▖ ', '   ▟▙  ', '▗▛▀▀▀▜▖', ' ╻   ╻ ', '  ▐█▌  ', '  ━┳━  ', '    ▚▞ ']
+const ICON_W = 7
 const LABEL_KEYS = ['description', 'command', 'file_path', 'notebook_path', 'pattern', 'query', 'url', 'subject', 'skill', 'prompt']
 
 const isLive = (l: Loop) => LIVE.includes(l.phase)
@@ -26,11 +32,7 @@ const agentColor = (id: string) => {
 
 const contextMeter = (used: number, window: number) => {
   const pct = Math.min(100, Math.round((used / window) * 100))
-  const cells = Math.round(pct / 20)
-  return {
-    text: `${'▰'.repeat(cells)}${'▱'.repeat(5 - cells)} ${pct}%`,
-    color: pct >= 85 ? 'error' : pct >= 60 ? 'warning' : undefined,
-  }
+  return { text: `${pct}%`, color: pct >= 85 ? 'error' : pct >= 60 ? 'warning' : undefined }
 }
 
 const oneLine = (s: string, max = 80) => {
@@ -176,6 +178,8 @@ export const register: Register = on => {
         steps: prev && isLive(prev) ? prev.steps : 0,
         tokens: prev && (e.agentId || isLive(prev)) ? prev.tokens : 0,
         todos: prev?.todos ?? [],
+        // The next hat along, so agents running together look different
+        icon: prev?.icon ?? Object.values(kept).filter(l => l.id !== MAIN && l.id !== id).length % HATS.length,
       }
       return kept
     })
@@ -269,8 +273,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const all = await read($, loops)
+    const collapsed = await read($, isFinishedCollapsed)
     const r = await read($, run)
     const beat = await read($, tick)
     const now = Date.now()
@@ -291,73 +296,90 @@ export const register: Register = on => {
 
     const card = ({ loop, depth }: { loop: Loop; depth: number }) => {
       const color = agentColor(loop.id)
-      const inner = Math.max(8, width - depth * 2 - 4)
-      const elapsed = (loop.endedAt && !isLive(loop) ? loop.endedAt : now) - loop.startedAt
+      const running = isLive(loop)
+      const inner = Math.max(8, width - depth * 2 - ICON_W - 2)
+      const elapsed = (loop.endedAt && !running ? loop.endedAt : now) - loop.startedAt
       const finished = loop.todos.filter(t => t.status === 'completed').length
       const current = loop.todos.find(t => t.status === 'in_progress')
       const hasTodos = loop.todos.length > 0
+      const ending = loop.phase === 'done' ? 'done' : loop.phase === 'aborted' ? 'stopped' : 'failed'
       const step = hasTodos
-        ? `${finished}/${loop.todos.length} · ${current ? current.active || current.text : loop.activity ?? loop.phase}`
-        : loop.activity ?? loop.phase
-      let bar: { fill: string; rest: string }
-      if (hasTodos) {
-        const n = Math.round((finished / loop.todos.length) * inner)
-        bar = { fill: '━'.repeat(n), rest: '─'.repeat(inner - n) }
+        ? `${finished}/${loop.todos.length}` + (running ? ` · ${current ? current.active || current.text : loop.activity ?? loop.phase}` : '')
+        : running
+          ? loop.activity ?? loop.phase
+          : ending
+      const mark = running
+        ? { text: SPIN[beat % SPIN.length]!, color }
+        : loop.phase === 'done'
+          ? { text: '✓', color: 'success' }
+          : loop.phase === 'aborted'
+            ? { text: '■', color: 'warning' }
+            : { text: '✗', color: 'error' }
+      const barColor = loop.phase === 'failed' ? 'error' : color
+      let bar: [string, string, string]
+      if (hasTodos || !running) {
+        const n = hasTodos ? Math.round((finished / loop.todos.length) * inner) : loop.phase === 'done' ? inner : 0
+        bar = ['', '━'.repeat(n), '─'.repeat(inner - n)]
       } else {
         // Indeterminate: a segment sliding across the track
         const seg = Math.max(3, Math.floor(inner / 5))
         const pos = (beat * 2) % (inner + seg) - seg
         const a = Math.max(0, pos)
         const b = Math.min(inner, pos + seg)
-        bar = { fill: '', rest: '─'.repeat(a) + '\u0000' + '━'.repeat(Math.max(0, b - a)) + '\u0000' + '─'.repeat(inner - Math.max(a, b)) }
+        bar = ['─'.repeat(a), '━'.repeat(Math.max(0, b - a)), '─'.repeat(inner - Math.max(a, b))]
       }
-      const meta = [loop.id === MAIN ? 'main' : loop.type, prettyModel(loop.model), loop.effort].filter(Boolean)
-      const [pre, mid, post] = bar.rest.split('\u0000')
+      const meta = [prettyModel(loop.model), loop.effort].filter(Boolean)
       const meter = loop.context && loop.window ? contextMeter(loop.context, loop.window) : undefined
+      const hat = loop.id === MAIN ? CROWN : HATS[(loop.icon ?? 0) % HATS.length]!
 
       return (
-        <Box key={loop.id} flexDirection="column" marginLeft={depth * 2} borderStyle="round" borderColor={color} paddingX={1}>
-          <Box justifyContent="space-between">
-            <Text bold wrap="truncate-end">
-              <Text color={color}>{SPIN[beat % SPIN.length]}</Text> {loop.title}
-            </Text>
-            <Text color={color}>●</Text>
-          </Box>
-          <Box justifyContent="space-between">
-            <Box flexShrink={1}>
+        <Box key={loop.id} flexDirection="column" marginLeft={depth * 2}>
+          <Box flexDirection="row">
+            <Box flexDirection="column" width={ICON_W} marginRight={2} flexShrink={0}>
+              <Text color={color}>{hat}</Text>
+              {BODY.map((row, i) => (
+                <Text key={String(i)} color="claude" dimColor={!running && loop.phase !== 'done'}>
+                  {row}
+                </Text>
+              ))}
+            </Box>
+            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+              <Box justifyContent="space-between">
+                <Box flexShrink={1}>
+                  <Text bold wrap="truncate-end">
+                    {loop.title}
+                  </Text>
+                </Box>
+                <Text color={mark.color}> {mark.text}</Text>
+              </Box>
               <Text wrap="truncate-end">
-                <Text color={color}>{meta[0] ?? ''}</Text>
-                <Text dimColor>{meta.length > 1 ? ' ' + meta.slice(1).join(' · ') : ''}</Text>
+                <Text color={color}>{loop.id === MAIN ? 'main' : loop.type ?? 'agent'}</Text>
+                <Text dimColor>{meta.length ? ' ' + meta.join(' · ') : ''}</Text>
+              </Text>
+              <Box justifyContent="space-between">
+                <Box flexShrink={1}>
+                  <Text wrap="truncate-end" dimColor={!running}>
+                    {step}
+                  </Text>
+                </Box>
+                <Text dimColor>
+                  {' '}
+                  {meter && (
+                    <Text color={meter.color} dimColor={!meter.color}>
+                      ctx {meter.text} ·{' '}
+                    </Text>
+                  )}
+                  {tokens(loop.tokens)} · {clock(elapsed)}
+                </Text>
+              </Box>
+              <Text>
+                <Text dimColor>{bar[0]}</Text>
+                <Text color={barColor}>{bar[1]}</Text>
+                <Text dimColor>{bar[2]}</Text>
               </Text>
             </Box>
-            {meter && (
-              <Text color={meter.color} dimColor={!meter.color}>
-                {' '}
-                ctx {meter.text}
-              </Text>
-            )}
           </Box>
-          <Box justifyContent="space-between">
-            <Box flexShrink={1}>
-              <Text wrap="truncate-end">{step}</Text>
-            </Box>
-            <Text dimColor>
-              {' '}
-              {tokens(loop.tokens)} tok · {clock(elapsed)}
-            </Text>
-          </Box>
-          {hasTodos ? (
-            <Text>
-              <Text color={color}>{bar.fill}</Text>
-              <Text dimColor>{bar.rest}</Text>
-            </Text>
-          ) : (
-            <Text>
-              <Text dimColor>{pre}</Text>
-              <Text color={color}>{mid ?? ''}</Text>
-              <Text dimColor>{post ?? ''}</Text>
-            </Text>
-          )}
+          <Text dimColor>{'─'.repeat(Math.max(1, width - depth * 2))}</Text>
         </Box>
       )
     }
@@ -401,25 +423,6 @@ export const register: Register = on => {
       )
     }
 
-    const doneRow = ({ loop, depth }: { loop: Loop; depth: number }) => {
-      const mark = loop.phase === 'done' ? '✓' : loop.phase === 'aborted' ? '■' : '✗'
-      const color = loop.phase === 'done' ? 'success' : loop.phase === 'aborted' ? 'warning' : 'error'
-      const elapsed = (loop.endedAt ?? now) - loop.startedAt
-      return (
-        <Box key={loop.id} justifyContent="space-between" marginLeft={depth * 2}>
-          <Box flexShrink={1}>
-            <Text wrap="truncate-end">
-              <Text color={color}>{mark}</Text> {loop.title}
-            </Text>
-          </Box>
-          <Text dimColor>
-            {' '}
-            {tokens(loop.tokens)} · {clock(elapsed)}
-          </Text>
-        </Box>
-      )
-    }
-
     return (
       <Box flexDirection="column">
         <Text bold>Agent tree</Text>
@@ -433,19 +436,23 @@ export const register: Register = on => {
         </Box>
         <Box marginTop={1}>
           <Text dimColor bold>
-            RUNNING · {live.length}
+            Running · {live.length}
           </Text>
         </Box>
         {live.length === 0 && <Text dimColor>Idle.</Text>}
         {live.map(card)}
         {done.length > 0 && (
           <Box marginTop={1}>
-            <Text dimColor bold>
-              FINISHED · {done.length}
-            </Text>
+            <Button
+              key="finished"
+              plain
+              dimColor
+              label={`${collapsed ? '▸' : '▾'} Finished · ${done.length}`}
+              onPress={() => update($, isFinishedCollapsed, c => !c)}
+            />
           </Box>
         )}
-        {done.slice(-8).map(doneRow)}
+        {!collapsed && done.slice(-8).map(card)}
         {timeline()}
       </Box>
     )
