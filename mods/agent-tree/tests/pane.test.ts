@@ -22,7 +22,7 @@ test('a running turn shows as a card with todo progress', async ($, on) => {
   })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-tree', surface, component: 'Pane', requestId: 'agent-tree', props: PROPS })
-    expect(await ui.find({ text: /RUNNING · 1/ })).toBeDefined()
+    expect(await ui.find({ text: /Running · 1/ })).toBeDefined()
     expect(await ui.find({ text: /1\/2 · Building pricing/ })).toBeDefined()
     await ui.unmount()
   }
@@ -41,7 +41,7 @@ test('tokens count new input and output, not cache reads', async ($, on) => {
   await $.turn.start({ text: 'Summarize', turnId: 't1' })
   for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5' })) void _
   const ui = await $.ui.mount({ plugin: 'agent-tree', surface: 'terminal', component: 'Pane', requestId: 'agent-tree', props: PROPS })
-  expect(await ui.find({ text: /2k tok/ })).toBeDefined()
+  expect(await ui.find({ text: /2k · 0:0/ })).toBeDefined()
   expect(await ui.find({ text: /92k/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -65,8 +65,8 @@ test("a card shows how much of its model's context window is used", async ($, on
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-tree', surface, component: 'Pane', requestId: 'agent-tree', props: PROPS })
     // main: 150k of the session's 1M window; the sub-agent: 150k of a 200k window
-    expect(await ui.find({ text: /ctx ▰▱▱▱▱ 15%/ })).toBeDefined()
-    expect(await ui.find({ text: /ctx ▰▰▰▰▱ 75%/ })).toBeDefined()
+    expect(await ui.find({ text: /ctx 15%/ })).toBeDefined()
+    expect(await ui.find({ text: /ctx 75%/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -95,4 +95,28 @@ test('the timeline shows one bar per agent once a sub-agent has run', async ($, 
     expect(await ui.find({ text: /^\s+0:00\s+0:01$/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('agents running together wear different hats, and finished ones fold away', async ($, on) => {
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  on('agent.list', () => ({
+    value: [
+      { id: 'a1', description: 'Review the kit', type: 'Explore', status: 'completed' as const },
+      { id: 'a2', description: 'Build the page', type: 'general-purpose', status: 'running' as const },
+    ],
+  }))
+  await $.turn.start({ text: 'Launch kit', turnId: 't1' })
+  await $.turn.start({ text: '', turnId: 't2', agentId: 'a1' })
+  await $.turn.start({ text: '', turnId: 't3', agentId: 'a2' })
+  await $.turn.complete({ turnId: 't2', agentId: 'a1', reason: 'answer', answer: '' })
+  const ui = await $.ui.mount({ plugin: 'agent-tree', surface: 'terminal', component: 'Pane', requestId: 'agent-tree', props: PROPS })
+  expect(await ui.find({ text: /^ ▗▙▟▙▖ $/ })).toBeDefined()
+  expect(await ui.find({ text: /^ ▄▄▄▄▄▖$/ })).toBeDefined()
+  expect(await ui.find({ text: /^ ▗███▖ $/ })).toBeDefined()
+  expect(await ui.find({ text: /Review the kit/ })).toBeDefined()
+  await ui.press({ key: 'finished' })
+  expect(await ui.find({ text: /Review the kit/ })).toBeUndefined()
+  expect(await ui.find({ text: /Build the page/ })).toBeDefined()
+  await ui.unmount()
 })
