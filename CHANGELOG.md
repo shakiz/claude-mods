@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+- task-band: the band now shows during any running turn, not only when Claude keeps a task list, since many sessions never get one. Without a list, the pill names what Claude is doing, a lit stretch sweeps across the bar, and the elapsed time replaces the percent. The band leaves when the turn ends.
+- files: a conflicting file is marked `!` instead of ⚠. Many macOS terminals draw ⚠ two cells wide while the layout counts one, so those rows spilled past the pane into the transcript.
+- agent-tree and files: the panes no longer keep a minimum width of 24 columns, so a narrow pane doesn't draw past its edge. Below 32 columns agent-tree drops the agent icons, below 36 it shows Cost, Tokens and Time on one line, and below 30 it hides the timeline.
+
 ## 0.5.0
 
 - task-band: a new band above the prompt shows the task list's title, a pixel progress bar with a `Tasks 2/4` pill, the done percent and how many agents are running. ✕ hides it until the next prompt.

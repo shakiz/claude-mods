@@ -29,7 +29,7 @@ A live **Files** pane:
 - **Branch line:** the current git branch and how many files have changed.
 - **File list:** every file Claude touched, grouped by folder. Each row has colored dots for *read*, *edited* and *not committed*, shows `editing…` while a change is in progress, then `+added −removed`: the lines Claude changed in that file this session, counted from a real diff.
 - **Agents:** once more than one agent has touched files, a legend lists them in their Agent tree colors, and each file shows ◆ for every agent that edited it and ◇ for one that only read it.
-- **Conflicts:** when an agent edits a file that another sub-agent has edited and is still running, the file is marked ⚠, a count appears under the branch line, and a toast names both agents.
+- **Conflicts:** when an agent edits a file that another sub-agent has edited and is still running, the file is marked **!** in the error color, a count appears under the branch line, and a toast names both agents.
 
 Toggle it with `/files`.
 
@@ -37,7 +37,7 @@ Only Claude's Read, Edit and Write tools are tracked. A file changed by a shell 
 
 ## task-band
 
-A one-line **band above the prompt** while Claude works through a task list:
+A one-line **band above the prompt** while Claude works:
 
 ```
 ● Launch kit  ▚▞▙▟ ▛▜▀▐ Tasks 2/4 ▌ · ▖   ▗  ·    ▘    50%  ▐▛█▜▌ ×4  ✕
@@ -49,6 +49,8 @@ A one-line **band above the prompt** while Claude works through a task list:
 - **✕** hides the band until your next prompt
 
 It follows the main agent's task list (TodoWrite, or TaskCreate and TaskUpdate), not the lists sub-agents keep for themselves. When a list is finished, the next prompt clears it.
+
+Without a task list, the band still shows while Claude works: a lit stretch sweeps across the bar, the pill names what Claude is doing (`Thinking`, the tool it's running, or `Delegating` to a sub-agent), and the elapsed time takes the place of the percent. It goes away when the turn ends.
 
 ## Install
 
