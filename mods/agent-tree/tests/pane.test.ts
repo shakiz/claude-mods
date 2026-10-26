@@ -22,7 +22,8 @@ test('a running turn shows as a card with todo progress', async ($, on) => {
   })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-tree', surface, component: 'Pane', requestId: 'agent-tree', props: PROPS })
-    expect(await ui.find({ text: /Running · 1/ })).toBeDefined()
+    expect(await ui.find({ text: /^RUNNING$/ })).toBeDefined()
+    expect(await ui.find({ text: /^ 1 AGENT$/ })).toBeDefined()
     expect(await ui.find({ text: /1\/2 · Building pricing/ })).toBeDefined()
     await ui.unmount()
   }
@@ -135,5 +136,33 @@ test('a narrow pane drops the icons and tiles, and no row is wider than the pane
   expect(await ui.find({ text: /^Cost$/ })).toBeUndefined()
   expect(await ui.find({ text: /^≈\$0\.00 · 0 · 0:0\d$/ })).toBeDefined()
   for (const t of await ui.findAll({ text: /^─+$/ })) expect(t.text.length).toBeLessThanOrEqual(20)
+  await ui.unmount()
+})
+
+test('the RIGHT NOW card says what Claude is doing, and cards show what each agent touched', async ($, on) => {
+  on('tool.call', () => ({ result: {} }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'Fix the login bug', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/auth.ts' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/auth.ts', old_string: 'a', new_string: 'b' })
+  let ui = await $.ui.mount({ plugin: 'agent-tree', surface: 'terminal', component: 'Pane', requestId: 'agent-tree', props: PROPS })
+  expect(await ui.find({ text: /^RIGHT NOW$/ })).toBeDefined()
+  expect(await ui.find({ text: /^Claude is editing$/ })).toBeDefined()
+  // One file touched, one edited, and the ongoing status
+  expect(await ui.find({ text: /^ ●1 ●1 Editing$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a finished agent that ran git commit shows as committed', async ($, on) => {
+  on('tool.call', () => ({ result: {} }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  await $.turn.start({ text: 'Ship it', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "fix"' })
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: '' })
+  const ui = await $.ui.mount({ plugin: 'agent-tree', surface: 'terminal', component: 'Pane', requestId: 'agent-tree', props: PROPS })
+  expect(await ui.find({ text: /^LAST$/ })).toBeDefined()
+  expect(await ui.find({ text: /^Claude finished$/ })).toBeDefined()
+  expect(await ui.find({ text: /Committed$/ })).toBeDefined()
   await ui.unmount()
 })
