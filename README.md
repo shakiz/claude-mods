@@ -92,16 +92,6 @@ claude plugin update task-band@claude-panes
 
 Then run `/reload-plugins` in any open session.
 
-## Moving from claude-mods
-
-The repo was called `claude-mods`, the marketplace `local-mods`, and the panes `agent-progress` (`/progress`) and `file-activity`. To switch to the new names:
-
-```bash
-claude plugin uninstall agent-progress@local-mods
-claude plugin uninstall file-activity@local-mods
-claude plugin marketplace remove local-mods
-```
-
 Then follow [Install](#install).
 
 ## Uninstall
