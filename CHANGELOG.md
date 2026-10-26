@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- agent-tree: a **RIGHT NOW** card at the top says what Claude is doing (`Claude is editing`, `Claude is delegating`), the file or command it's on, and how the last prompt ended. While the work is ongoing, the headline shimmers. Under a divider are the main model, the sub-agent count and a legend.
+- agent-tree: each card shows a status, *Thinking*, *Reading*, *Editing*, *Committing* and so on while the agent works, shimmering, then *Done*, *Committed*, *Stopped* or *Failed*, with how many files it touched and edited.
+- agent-tree: Running, Finished and Timeline sit in rounded cards with an uppercase heading and a count on the right. Below 30 columns the cards drop their borders.
+- agent-tree: the pane redraws four times a second while agents run, so the shimmer moves smoothly. The status line and cost keep their old pace.
+
 ## 0.5.1
 
 - task-band: the band now shows during any running turn, not only when Claude keeps a task list, since many sessions never get one. Without a list, the pill names what Claude is doing, a lit stretch sweeps across the bar, and the elapsed time replaces the percent. The band leaves when the turn ends.

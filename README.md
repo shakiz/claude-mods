@@ -6,16 +6,20 @@ Two live side panes and a band above the prompt for [Claude Code](https://claude
 
 A live **Agent tree** pane:
 
+- **RIGHT NOW:** a card at the top with what Claude is doing (`Claude is editing`, `Claude is thinking`, `Claude is delegating`), the file or command it's on, and a spinner. While the work is ongoing, a bright patch shimmers across the headline. When the turn ends it says how the prompt went: finished, stopped or failed. Under a divider are the main model, how many sub-agents ran and are running, and a legend for the touched, edited and committed dots.
 - **Header tiles:** Cost, Tokens and Time for the current prompt.
-- **Running · n:** a card for each running agent, with sub-agents indented under the agent that started them. Each card shows:
+- **RUNNING · n AGENTS:** a card for each running agent, with sub-agents indented under the agent that started them. Each card shows:
   - a small pixel Clawd: the main agent wears a crown, and each sub-agent gets its own hat in its own color, so agents running together are easy to tell apart
   - the task title and a status mark: a spinner while it runs, then ✓, ✗ or ■ (stopped)
   - the agent type, model and effort
+  - a status: *Thinking*, *Writing*, *Reading*, *Editing*, *Committing*, *Delegating* or *Running* while it works, shimmering, then *Done*, *Committed* (it ran a `git commit` that succeeded), *Stopped* or *Failed*
+  - how many files the agent touched ● and edited ●, on wide enough cards
   - todo progress (`3/4 · Building pricing`), or the current step when there are no todos (thinking, writing, or the tool being called)
   - `ctx 62%`: how full the agent's context window is, in the warning color from 60% and the error color from 85%, near auto-compaction
   - tokens, elapsed time and a progress bar in the agent's color
-- **Finished · n:** the same cards for agents that are done. Click the heading to fold them away.
+- **FINISHED · n AGENTS:** the same cards for agents that are done. Click the heading to fold them away.
 - **TIMELINE:** once a sub-agent has run, one bar per agent on a shared time axis from the start of the prompt, so you can see which agents ran in parallel and which waited.
+- The RIGHT NOW card and each section sit in a rounded card with a heading on the left and a count on the right. Below 30 columns the cards drop their borders.
 - Each agent keeps one color, and the Files pane uses the same color for it.
 - **Status line:** a one-line summary while work is running, so progress is visible even with the pane closed.
 

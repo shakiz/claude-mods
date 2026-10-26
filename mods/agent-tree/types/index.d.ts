@@ -20,6 +20,10 @@ export type Loop = {
   todos: Todo[]
   // Which hat the agent's icon wears, in the order agents started
   icon?: number
+  // Files the agent read and edited, and whether it ran a git commit
+  touched?: string[]
+  edited?: string[]
+  isCommitted?: boolean
 }
 
 export type Run = { startedAt: number; endedAt?: number; costAtStart: number; cost: number }
