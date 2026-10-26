@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { Loop, Phase, Run, Todo } from '../types'
 
@@ -18,9 +18,42 @@ const BODY = ['▐▛███▜▌', '▝▜███▛▘', ' ▘▘ ▝▝ 
 const CROWN = ' ▗▙▟▙▖ '
 const HATS = [' ▄▄▄▄▄▖', ' ▗███▖ ', '   ▟▙  ', '▗▛▀▀▀▜▖', ' ╻   ╻ ', '  ▐█▌  ', '  ━┳━  ', '    ▚▞ ']
 const ICON_W = 7
+const READ_TOOLS = ['Read', 'Grep', 'Glob', 'LS']
+const EDIT_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'MultiEdit']
+const READ_COLOR = 'suggestion'
+const EDIT_COLOR = 'claude'
+const COMMIT = /\bgit\s+(?:-\S+\s+)*commit\b/
 const LABEL_KEYS = ['description', 'command', 'file_path', 'notebook_path', 'pattern', 'query', 'url', 'subject', 'skill', 'prompt']
 
 const isLive = (l: Loop) => LIVE.includes(l.phase)
+
+// What an agent is doing now, or how it ended, as a word with a color
+const statusOf = (l: Loop): { text: string; color: string; isOngoing: boolean } => {
+  const tool = (l.activity ?? '').split(' · ')[0] ?? ''
+  if (isLive(l)) {
+    const text =
+      l.phase === 'writing'
+        ? 'Writing'
+        : l.phase !== 'calling' && l.phase !== 'tools'
+          ? 'Thinking'
+          : EDIT_TOOLS.includes(tool)
+            ? 'Editing'
+            : READ_TOOLS.includes(tool)
+              ? 'Reading'
+              : tool === 'Bash' && COMMIT.test(l.activity ?? '')
+                ? 'Committing'
+                : tool === 'Agent' || tool === 'Task'
+                  ? 'Delegating'
+                  : 'Running'
+    const color = text === 'Editing' ? EDIT_COLOR : text === 'Reading' ? READ_COLOR : text === 'Committing' ? 'success' : 'claude'
+    return { text, color, isOngoing: true }
+  }
+  if (l.phase === 'done') return l.isCommitted ? { text: 'Committed', color: 'success', isOngoing: false } : { text: 'Done', color: 'success', isOngoing: false }
+  if (l.phase === 'aborted') return { text: 'Stopped', color: 'warning', isOngoing: false }
+  return { text: 'Failed', color: 'error', isOngoing: false }
+}
+
+const addPath = (list: string[] | undefined, path: string) => (list?.includes(path) ? list : [...(list ?? []), path])
 
 // One color per agent, from its id, so the files pane colors the same agent the same way
 const agentColor = (id: string) => {
@@ -104,7 +137,8 @@ export const register: Register = on => {
     void $.ui.open({ id: PANE, title: 'Agent tree' })
 
     let beats = 0
-    $.clock.every(1000, () => {
+    // Four beats a second so ongoing statuses shimmer; the status line and cost keep their old pace
+    $.clock.every(250, () => {
       void (async () => {
         const all = await read($, loops)
         const live = Object.values(all).filter(isLive)
@@ -114,7 +148,8 @@ export const register: Register = on => {
           return
         }
         await update($, tick, n => n + 1)
-        if (++beats % 3 === 0) await refreshCost($)
+        if (++beats % 12 === 0) await refreshCost($)
+        if (beats % 4 !== 1) return
         const r = await read($, run)
         const agents = live.filter(l => l.id !== MAIN).length
         const total = Object.values(all).reduce((s, l) => s + l.tokens, 0)
@@ -178,6 +213,9 @@ export const register: Register = on => {
         steps: prev && isLive(prev) ? prev.steps : 0,
         tokens: prev && (e.agentId || isLive(prev)) ? prev.tokens : 0,
         todos: prev?.todos ?? [],
+        touched: prev && (e.agentId || isLive(prev)) ? prev.touched : undefined,
+        edited: prev && (e.agentId || isLive(prev)) ? prev.edited : undefined,
+        isCommitted: prev && (e.agentId || isLive(prev)) ? prev.isCommitted : undefined,
         // The next hat along, so agents running together look different
         icon: prev?.icon ?? Object.values(kept).filter(l => l.id !== MAIN && l.id !== id).length % HATS.length,
       }
@@ -235,7 +273,16 @@ export const register: Register = on => {
       await patch($, id, l => ({ ...l, todos }))
     }
 
+    const x = e as Record<string, unknown>
+    const path = typeof x.file_path === 'string' ? x.file_path : typeof x.notebook_path === 'string' ? x.notebook_path : undefined
+    if (path && e.tool === 'Read') await patch($, id, l => ({ ...l, touched: addPath(l.touched, path) }))
+
     const ran = await next(e)
+
+    if (path && EDIT_TOOLS.includes(e.tool) && !ran.isError) {
+      await patch($, id, l => ({ ...l, touched: addPath(l.touched, path), edited: addPath(l.edited, path) }))
+    }
+    if (e.tool === 'Bash' && COMMIT.test(e.command) && !ran.isError) await patch($, id, l => ({ ...l, isCommitted: true }))
 
     if (e.tool === 'TaskCreate' && ran.result && !ran.isError) {
       const task = (ran.result as { task?: { id: string } }).task
@@ -291,6 +338,12 @@ export const register: Register = on => {
     const runMs = r ? (anyLive ? now : r.endedAt ?? now) - r.startedAt : 0
     const costText = r ? `≈$${Math.max(0, r.cost - r.costAtStart).toFixed(2)}` : '—'
 
+    // Above this width the hero and the sections sit in rounded cards, as in the Files pane
+    const framed = width >= 30
+    const inner = framed ? width - 4 : width
+    const frame = framed ? { borderStyle: 'round' as const, borderDimColor: true, paddingX: 1 } : {}
+    const count = (n: number) => `${n} AGENT${n === 1 ? '' : 'S'}`
+
     const tile = (label: string, value: string) => (
       <Box flexDirection="column" flexGrow={1} borderStyle="round" borderDimColor paddingX={1}>
         <Text dimColor>{label}</Text>
@@ -298,10 +351,39 @@ export const register: Register = on => {
       </Box>
     )
 
-    const card = ({ loop, depth }: { loop: Loop; depth: number }) => {
+    // A bright patch that sweeps across the word while the work is ongoing
+    const shimmer = (text: string, color: string, isOngoing: boolean) => {
+      if (!isOngoing) return <Text color={color}>{text}</Text>
+      const at = (beat % (text.length + 6)) - 3
+      return (
+        <Text>
+          {[...text].map((ch, i) => (
+            <Text key={String(i)} color={color} bold={Math.abs(i - at) <= 1} dimColor={Math.abs(i - at) > 1}>
+              {ch}
+            </Text>
+          ))}
+        </Text>
+      )
+    }
+
+    // A card with an uppercase heading on the left and a count on the right
+    const section = (key: string, head: RenderChildren, right: string, body: RenderChildren) => (
+      <Box key={key} flexDirection="column" marginTop={1} {...frame}>
+        <Box justifyContent="space-between">
+          <Box flexShrink={1}>{head}</Box>
+          <Text dimColor bold>
+            {' '}
+            {right}
+          </Text>
+        </Box>
+        {body}
+      </Box>
+    )
+
+    const card = ({ loop, depth }: { loop: Loop; depth: number }, i: number) => {
       const color = agentColor(loop.id)
       const running = isLive(loop)
-      const inner = Math.max(1, width - depth * 2 - (hasIcons ? ICON_W + 2 : 0))
+      const track = Math.max(1, inner - depth * 2 - (hasIcons ? ICON_W + 2 : 0))
       const elapsed = (loop.endedAt && !running ? loop.endedAt : now) - loop.startedAt
       const finished = loop.todos.filter(t => t.status === 'completed').length
       const current = loop.todos.find(t => t.status === 'in_progress')
@@ -322,22 +404,30 @@ export const register: Register = on => {
       const barColor = loop.phase === 'failed' ? 'error' : color
       let bar: [string, string, string]
       if (hasTodos || !running) {
-        const n = hasTodos ? Math.round((finished / loop.todos.length) * inner) : loop.phase === 'done' ? inner : 0
-        bar = ['', '━'.repeat(n), '─'.repeat(inner - n)]
+        const n = hasTodos ? Math.round((finished / loop.todos.length) * track) : loop.phase === 'done' ? track : 0
+        bar = ['', '━'.repeat(n), '─'.repeat(track - n)]
       } else {
         // Indeterminate: a segment sliding across the track
-        const seg = Math.max(3, Math.floor(inner / 5))
-        const pos = (beat * 2) % (inner + seg) - seg
+        const seg = Math.max(3, Math.floor(track / 5))
+        const pos = (beat * 2) % (track + seg) - seg
         const a = Math.max(0, pos)
-        const b = Math.min(inner, pos + seg)
-        bar = ['─'.repeat(a), '━'.repeat(Math.max(0, b - a)), '─'.repeat(inner - Math.max(a, b))]
+        const b = Math.min(track, pos + seg)
+        bar = ['─'.repeat(a), '━'.repeat(Math.max(0, b - a)), '─'.repeat(track - Math.max(a, b))]
       }
       const meta = [prettyModel(loop.model), loop.effort].filter(Boolean)
       const meter = loop.context && loop.window ? contextMeter(loop.context, loop.window) : undefined
       const hat = loop.id === MAIN ? CROWN : HATS[(loop.icon ?? 0) % HATS.length]!
+      const status = statusOf(loop)
+      const read = loop.touched?.length ?? 0
+      const edits = loop.edited?.length ?? 0
 
       return (
         <Box key={loop.id} flexDirection="column" marginLeft={depth * 2}>
+          {i > 0 && (
+            <Text dimColor wrap="truncate-end">
+              {'─'.repeat(Math.max(1, inner - depth * 2))}
+            </Text>
+          )}
           <Box flexDirection="row">
             {hasIcons && (
               <Box flexDirection="column" width={ICON_W} marginRight={2} flexShrink={0}>
@@ -358,10 +448,30 @@ export const register: Register = on => {
                 </Box>
                 <Text color={mark.color}> {mark.text}</Text>
               </Box>
-              <Text wrap="truncate-end">
-                <Text color={color}>{loop.id === MAIN ? 'main' : loop.type ?? 'agent'}</Text>
-                <Text dimColor>{meta.length ? ' ' + meta.join(' · ') : ''}</Text>
-              </Text>
+              <Box justifyContent="space-between">
+                <Box flexShrink={1}>
+                  <Text wrap="truncate-end">
+                    <Text color={color}>{loop.id === MAIN ? 'main' : loop.type ?? 'agent'}</Text>
+                    <Text dimColor>{meta.length ? ' ' + meta.join(' · ') : ''}</Text>
+                  </Text>
+                </Box>
+                <Text>
+                  {' '}
+                  {track >= 30 && read > 0 && (
+                    <Text>
+                      <Text color={READ_COLOR}>●</Text>
+                      <Text dimColor>{read} </Text>
+                    </Text>
+                  )}
+                  {track >= 30 && edits > 0 && (
+                    <Text>
+                      <Text color={EDIT_COLOR}>●</Text>
+                      <Text dimColor>{edits} </Text>
+                    </Text>
+                  )}
+                  {shimmer(status.text, status.color, status.isOngoing)}
+                </Text>
+              </Box>
               <Box justifyContent="space-between">
                 <Box flexShrink={1}>
                   <Text wrap="truncate-end" dimColor={!running}>
@@ -385,28 +495,27 @@ export const register: Register = on => {
               </Text>
             </Box>
           </Box>
-          <Text dimColor wrap="truncate-end">
-            {'─'.repeat(Math.max(1, width - depth * 2))}
-          </Text>
         </Box>
       )
     }
 
     // When each agent ran, on one time axis from the prompt's start, so parallel work lines up
     const timeline = () => {
-      if (!r || rows.length < 2 || width < 30) return null
+      if (!r || rows.length < 2 || inner < 26) return null
       const t0 = r.startedAt
       const ends = rows.map(x => (isLive(x.loop) ? now : x.loop.endedAt ?? now))
       const span = Math.max(1000, (anyLive ? now : Math.max(...ends)) - t0)
-      const labelW = Math.min(14, Math.floor(width * 0.3))
-      const barW = Math.max(8, width - labelW - 7)
+      const labelW = Math.min(14, Math.floor(inner * 0.3))
+      const barW = Math.max(8, inner - labelW - 7)
       const at = (t: number) => Math.min(barW, Math.max(0, Math.round(((t - t0) / span) * barW)))
       const shown = rows.slice(0, 8)
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor bold>
-            TIMELINE
-          </Text>
+      return section(
+        'timeline',
+        <Text dimColor bold>
+          TIMELINE
+        </Text>,
+        clock(span),
+        <Box flexDirection="column">
           {shown.map(({ loop, depth }, i) => {
             const a = at(loop.startedAt)
             const b = Math.min(barW, Math.max(a + 1, at(ends[i]!)))
@@ -427,16 +536,87 @@ export const register: Register = on => {
             {'0:00'.padEnd(barW - 4)}
             {clock(span).padStart(4)}
           </Text>
-        </Box>
+        </Box>,
       )
     }
 
+    // RIGHT NOW: what the main agent is doing, or how the last prompt ended
+    const main = all[MAIN]
+    const mainLive = !!main && isLive(main)
+    const [tool, ...rest] = (main?.activity ?? '').split(' · ')
+    const doing = (l: Loop) => {
+      const st = statusOf(l).text
+      return st === 'Running' ? `Claude is running ${tool || 'a tool'}` : `Claude is ${st.toLowerCase()}`
+    }
+    const headline = mainLive
+      ? doing(main)
+      : anyLive
+        ? `${live.length} agent${live.length === 1 ? '' : 's'} working`
+        : main
+          ? main.phase === 'done'
+            ? 'Claude finished'
+            : main.phase === 'aborted'
+              ? 'Claude stopped'
+              : 'Claude failed'
+          : 'Nothing has run yet'
+    const detail = mainLive && rest.length ? rest.join(' · ') : main?.title ?? 'send a prompt to start'
+    const icon = anyLive
+      ? { text: SPIN[beat % SPIN.length]!, color: 'claude' }
+      : !main
+        ? { text: '✳', color: undefined }
+        : main.phase === 'done'
+          ? { text: '✓', color: 'success' }
+          : main.phase === 'aborted'
+            ? { text: '■', color: 'warning' }
+            : { text: '✗', color: 'error' }
+    const agentsSeen = rows.filter(x => x.loop.id !== MAIN).length
+    const agentsLive = live.filter(x => x.loop.id !== MAIN).length
+
     return (
       <Box flexDirection="column">
-        <Text bold>Agent tree</Text>
-        <Text dimColor wrap="truncate-end">
-          {all[MAIN]?.title ?? 'Nothing has run yet'}
-        </Text>
+        <Box flexDirection="column" {...frame}>
+          <Box flexDirection="row" gap={2}>
+            {hasIcons && (
+              <Box borderStyle="round" borderColor={icon.color} borderDimColor={!icon.color} paddingX={1} flexShrink={0}>
+                <Text color={icon.color} dimColor={!icon.color}>
+                  {icon.text}
+                </Text>
+              </Box>
+            )}
+            <Box flexDirection="column" flexShrink={1}>
+              <Text color="claude" bold>
+                {anyLive ? 'RIGHT NOW' : main ? 'LAST' : 'IDLE'}
+              </Text>
+              <Text bold wrap="truncate-end">
+                {mainLive ? shimmer(headline, 'claude', true) : headline}
+              </Text>
+              <Text dimColor wrap="truncate-end">
+                {detail}
+              </Text>
+            </Box>
+          </Box>
+          <Text dimColor wrap="truncate-end">
+            {'─'.repeat(inner)}
+          </Text>
+          <Box justifyContent="space-between">
+            <Text wrap="truncate-end">
+              <Text color="claude">◆</Text> <Text bold>{prettyModel(main?.model) || 'main'}</Text>
+              <Text dimColor>{main?.effort ? ' · ' + main.effort : ''}</Text>
+            </Text>
+            <Text dimColor>
+              {' '}
+              {agentsSeen ? `${agentsSeen} sub-agent${agentsSeen === 1 ? '' : 's'} · ${agentsLive} running` : 'no sub-agents'}
+            </Text>
+          </Box>
+          <Text wrap="truncate-end">
+            <Text color={READ_COLOR}>●</Text>
+            <Text dimColor> touched  </Text>
+            <Text color={EDIT_COLOR}>●</Text>
+            <Text dimColor> edited  </Text>
+            <Text color="success">●</Text>
+            <Text dimColor> committed</Text>
+          </Text>
+        </Box>
         {hasTiles ? (
           <Box flexDirection="row" gap={1} marginTop={1}>
             {tile('Cost', costText)}
@@ -448,25 +628,27 @@ export const register: Register = on => {
             {costText} · {tokens(total)} · {clock(runMs)}
           </Text>
         )}
-        <Box marginTop={1}>
+        {section(
+          'running',
           <Text dimColor bold>
-            Running · {live.length}
-          </Text>
-        </Box>
-        {live.length === 0 && <Text dimColor>Idle.</Text>}
-        {live.map(card)}
-        {done.length > 0 && (
-          <Box marginTop={1}>
+            RUNNING
+          </Text>,
+          count(live.length),
+          live.length === 0 ? <Text dimColor>  Nothing running</Text> : <Box flexDirection="column">{live.map(card)}</Box>,
+        )}
+        {done.length > 0 &&
+          section(
+            'done',
             <Button
               key="finished"
               plain
               dimColor
-              label={`${collapsed ? '▸' : '▾'} Finished · ${done.length}`}
+              label={`${collapsed ? '▸' : '▾'} FINISHED`}
               onPress={() => update($, isFinishedCollapsed, c => !c)}
-            />
-          </Box>
-        )}
-        {!collapsed && done.slice(-8).map(card)}
+            />,
+            count(done.length),
+            collapsed ? null : <Box flexDirection="column">{done.slice(-8).map(card)}</Box>,
+          )}
         {timeline()}
       </Box>
     )
